@@ -1,0 +1,46 @@
+# Dépendances
+node_modules
+npm-debug.log
+
+# Fichiers de développement
+.env
+.env.local
+.env.*.local
+
+# Base de données locale
+database.sqlite
+*.db
+
+# Build artifacts
+dist
+
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+coverage
+.nyc_output
+
+# Logs
+logs
+*.log
+
+# Fichiers temporaires
+tmp
+temp

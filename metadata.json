@@ -1,0 +1,5 @@
+{
+  "name": "DocFlow",
+  "description": "Plateforme interne de gestion de signatures électroniques via Docuseal API pour les commerciaux.",
+  "requestFramePermissions": []
+}
