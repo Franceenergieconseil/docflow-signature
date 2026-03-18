@@ -8,8 +8,9 @@ WORKDIR /app
 # Copier les fichiers de dépendances
 COPY package*.json ./
 
-# Installer toutes les dépendances (y compris devDependencies pour le build)
-RUN npm ci
+# IMPORTANT: Installer TOUTES les dépendances (y compris devDependencies) pour le build
+# On force l'installation des devDependencies même si NODE_ENV=production
+RUN npm ci --include=dev
 
 # Copier le code source frontend
 COPY src ./src
@@ -17,7 +18,7 @@ COPY index.html ./
 COPY vite.config.ts ./
 COPY tsconfig.json ./
 
-# Build du frontend
+# Build du frontend avec Vite
 RUN npm run build
 
 # ===================================

@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  docflow:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
@@ -12,10 +12,12 @@ services:
       - NODE_ENV=production
       - DATABASE_PATH=/app/data/database.sqlite
       - PORT=3000
-      # Ajoutez vos autres variables d'environnement ici
+      # Variables à renseigner dans Coolify (Secrets)
       # - JWT_SECRET=${JWT_SECRET}
       # - DOCUSEAL_API_KEY=${DOCUSEAL_API_KEY}
-      # - DOCUSEAL_BASE_URL=${DOCUSEAL_BASE_URL}
+      # - DOCUSEAL_API_URL=${DOCUSEAL_API_URL}
+      # - DOCUSEAL_WEBHOOK_SECRET=${DOCUSEAL_WEBHOOK_SECRET}
+      # - APP_URL=${APP_URL}
     volumes:
       # Volume nommé persistant pour la base de données SQLite
       - docflow_db:/app/data
