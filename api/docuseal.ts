@@ -37,11 +37,15 @@ export const docusealApi = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to send document to Docuseal');
+      const errorData = await response.json().catch(() => ({}));
+      console.error('❌ Erreur détaillée DocuSeal:', JSON.stringify(errorData, null, 2));
+      console.error('📋 Status:', response.status, response.statusText);
+      throw new Error(`Failed to send document: ${response.statusText} - ${JSON.stringify(errorData)}`);
     }
 
-    return response.json();
+    const result = await response.json();
+    console.log('✅ Document envoyé avec succès:', result);
+    return result;
   },
 
   async getSubmission(id: number) {

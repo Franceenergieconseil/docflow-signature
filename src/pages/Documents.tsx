@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../AuthContext';
-import { Search, FileText, User, ChevronRight, Check, ArrowLeft, Send, Building2, Mail, Loader2, AlertCircle, Plus, Eye, Download, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Trash2, X } from 'lucide-react';
+import { Search, FileText, User, ChevronRight, Check, ArrowLeft, Send, Building2, Mail, Loader2, AlertCircle, Plus, Eye, Download, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Trash2, X, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface FieldMapping {
   id: number;
   template_id: number;
   docuseal_field_name: string;
+  source_category: 'client' | 'entreprise' | 'dynamique' | 'ignore';
   contact_field_name: string | null;
   field_type: string;
   is_dynamic: boolean;
@@ -36,9 +37,16 @@ interface Document {
   client_nom: string;
   client_entreprise: string;
   template_name: string;
+  sender_first_name: string;
+  sender_last_name: string;
+  sender_email: string;
 }
 
-const Documents: React.FC = () => {
+interface DocumentsProps {
+  initialFilter?: 'all' | 'pending' | 'signed' | 'archived';
+}
+
+const Documents: React.FC<DocumentsProps> = ({ initialFilter }) => {
   const { token, user } = useAuth();
   const [mode, setMode] = useState<'list' | 'create'>('list'); // list or create
   const [step, setStep] = useState(1);
@@ -57,9 +65,24 @@ const Documents: React.FC = () => {
   const [customExpiryDate, setCustomExpiryDate] = useState('');
   const [showRelaunchModal, setShowRelaunchModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  
+  // Filtres avec persistance via localStorage
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'signed' | 'archived'>(() => {
+    if (initialFilter) return initialFilter;
+    const saved = localStorage.getItem('documentsStatusFilter');
+    return (saved as any) || 'all';
+  });
+  
+  // Mettre à jour le filtre initial si fourni
+  useEffect(() => {
+    if (initialFilter) {
+      setStatusFilter(initialFilter);
+    }
+  }, [initialFilter]);
 
   useEffect(() => {
     fetchClients();
@@ -196,6 +219,50 @@ const Documents: React.FC = () => {
     }
   };
 
+  const handleDownload = async (
+    docId: number,
+    templateName: string,
+    clientPrenom: string,
+    clientNom: string
+  ) => {
+    try {
+      const response = await fetch(`/api/documents/${docId}/download`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        alert(error.message || 'Erreur lors du téléchargement');
+        return;
+      }
+
+      // Créer un nom de fichier propre
+      const fileName = `${templateName}_${clientPrenom}_${clientNom}.pdf`
+        .replace(/\s+/g, '_')
+        .replace(/[^a-zA-Z0-9_.-]/g, '');
+
+      // Récupérer le blob PDF
+      const blob = await response.blob();
+
+      // Déclencher le téléchargement
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Nettoyage
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      console.log(`✅ Document téléchargé : ${fileName}`);
+    } catch (error) {
+      console.error('Erreur téléchargement:', error);
+      alert('Erreur réseau lors du téléchargement');
+    }
+  };
+
   const fetchTemplateFields = async (templateId: number, client: any) => {
     setLoading(true);
     try {
@@ -300,7 +367,161 @@ const Documents: React.FC = () => {
     }
   };
 
-  const filteredClients = clients.filter(c => 
+  // Fonction pour rendre le bon type d'input selon le field_type
+  const renderFieldInput = (mapping: FieldMapping, isIgnored: boolean, isAutoFilled: boolean, autoFilledSource: string) => {
+    const fieldType = (mapping.field_type || 'text').toLowerCase();
+    const fieldName = mapping.docuseal_field_name;
+    const value = formData[fieldName];
+
+    // Props communes
+    const commonProps = {
+      required: mapping.is_required && mapping.source_category !== 'ignore',
+      readOnly: isAutoFilled && !isIgnored,
+      disabled: isIgnored,
+    };
+
+    const getClassName = () => `transition-all ${
+      isIgnored
+        ? 'bg-purple-50 border-purple-200 cursor-not-allowed'
+        : (isAutoFilled ? 'bg-emerald-50 border-emerald-200 cursor-not-allowed' : 'bg-white')
+    }`;
+
+    // CHECKBOX - Utilise un booléen
+    if (fieldType === 'checkbox') {
+      return (
+        <div className="flex items-center gap-3 p-4 border border-[#E2E8F0] rounded-lg hover:bg-gray-50">
+          <input
+            type="checkbox"
+            id={fieldName}
+            checked={!!value} // Convertir en booléen
+            onChange={(e) => !isIgnored && setFormData({ ...formData, [fieldName]: e.target.checked })}
+            {...commonProps}
+            className={`w-5 h-5 text-[#2563EB] rounded focus:ring-2 focus:ring-[#2563EB] cursor-pointer ${getClassName()}`}
+          />
+          <label htmlFor={fieldName} className="text-sm font-medium text-[#0F172A] cursor-pointer flex-1">
+            {mapping.label}
+          </label>
+        </div>
+      );
+    }
+
+    // DATE - Input date avec format min
+    if (fieldType === 'date') {
+      return (
+        <input
+          type="date"
+          value={isIgnored ? '' : (value || '')}
+          onChange={(e) => !isIgnored && setFormData({ ...formData, [fieldName]: e.target.value })}
+          min={new Date().toISOString().split('T')[0]}
+          placeholder={isIgnored ? 'Le client remplira ce champ' : 'Sélectionner une date'}
+          {...commonProps}
+          className={`input ${getClassName()}`}
+        />
+      );
+    }
+
+    // SELECT - Menu déroulant
+    if (fieldType === 'select') {
+      // Récupérer les options depuis le schema DocuSeal si disponible
+      const field = templateFieldsResponse?.docusealFields.find(f => f.name === fieldName);
+      const options = field?.options || [];
+
+      return (
+        <select
+          value={isIgnored ? '' : (value || '')}
+          onChange={(e) => !isIgnored && setFormData({ ...formData, [fieldName]: e.target.value })}
+          {...commonProps}
+          className={`input ${getClassName()}`}
+        >
+          <option value="">-- Sélectionner --</option>
+          {options.map((opt: string) => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
+      );
+    }
+
+    // TEXTAREA - Pour texte long
+    if (fieldType === 'textarea') {
+      return (
+        <textarea
+          value={isIgnored ? '' : (value || '')}
+          onChange={(e) => !isIgnored && setFormData({ ...formData, [fieldName]: e.target.value })}
+          placeholder={isIgnored ? 'Le client remplira ce champ' : 'Saisir le texte'}
+          rows={4}
+          {...commonProps}
+          className={`input ${getClassName()}`}
+        />
+      );
+    }
+
+    // NUMBER - Champ numérique
+    if (fieldType === 'number') {
+      return (
+        <input
+          type="number"
+          value={isIgnored ? '' : (value || '')}
+          onChange={(e) => !isIgnored && setFormData({ ...formData, [fieldName]: e.target.value })}
+          placeholder={isIgnored ? 'Le client remplira ce champ' : 'Saisir un nombre'}
+          {...commonProps}
+          className={`input ${getClassName()}`}
+        />
+      );
+    }
+
+    // EMAIL - avec validation
+    if (fieldType === 'email') {
+      return (
+        <input
+          type="email"
+          value={isIgnored ? '' : (value || '')}
+          onChange={(e) => !isIgnored && setFormData({ ...formData, [fieldName]: e.target.value })}
+          placeholder={isIgnored ? 'Le client remplira ce champ' : 'exemple@email.com'}
+          {...commonProps}
+          className={`input ${getClassName()}`}
+        />
+      );
+    }
+
+    // TEXT - Par défaut
+    return (
+      <input
+        type="text"
+        value={isIgnored ? '' : (value || '')}
+        onChange={(e) => !isIgnored && setFormData({ ...formData, [fieldName]: e.target.value })}
+        placeholder={isIgnored ? 'Le client remplira ce champ' : (isAutoFilled ? `Auto-rempli: ${autoFilledSource}` : 'Veuillez remplir ce champ')}
+        {...commonProps}
+        className={`input ${getClassName()}`}
+      />
+    );
+  };
+
+  // Fonction pour changer le filtre et le sauvegarder dans localStorage
+  const handleFilterChange = (filter: 'all' | 'pending' | 'signed' | 'archived') => {
+    setStatusFilter(filter);
+    localStorage.setItem('documentsStatusFilter', filter);
+  };
+
+  // Filtrer les documents par statut
+  const filteredByStatus = documents.filter(doc => {
+    if (statusFilter === 'all') return true;
+    if (statusFilter === 'pending') return doc.status === 'sent' || doc.status === 'opened';
+    if (statusFilter === 'signed') return doc.status === 'signed';
+    if (statusFilter === 'archived') return doc.status === 'declined' || doc.status === 'expired';
+    return true;
+  });
+
+  // Filtrer par recherche (client ou commercial)
+  const filteredDocuments = filteredByStatus.filter(doc => {
+    const clientName = `${doc.client_prenom} ${doc.client_nom}`.toLowerCase();
+    const clientCompany = doc.client_entreprise.toLowerCase();
+    const senderName = `${doc.sender_first_name} ${doc.sender_last_name}`.toLowerCase();
+    const search = searchTerm.toLowerCase();
+    
+    return clientName.includes(search) || clientCompany.includes(search) || senderName.includes(search);
+  });
+
+  const filteredClients = clients.filter(c =>
     `${c.prenom} ${c.nom}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
     c.entreprise.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -350,12 +571,45 @@ const Documents: React.FC = () => {
             <p className="text-[#64748B] mt-1">Suivi en temps réel des documents envoyés en signature</p>
           </div>
 
+          {/* Filtres de statut */}
+          <div className="flex flex-wrap gap-3">
+            {[
+              { value: 'all', label: 'Tous', count: documents.length, icon: FileText },
+              { value: 'pending', label: 'En attente', count: documents.filter(d => d.status === 'sent' || d.status === 'opened').length, icon: Clock },
+              { value: 'signed', label: 'Signés', count: documents.filter(d => d.status === 'signed').length, icon: CheckCircle2 },
+              { value: 'archived', label: 'Archives', count: documents.filter(d => d.status === 'declined' || d.status === 'expired').length, icon: XCircle }
+            ].map(filter => {
+              const FilterIcon = filter.icon;
+              return (
+                <button
+                  key={filter.value}
+                  onClick={() => handleFilterChange(filter.value as any)}
+                  className={`px-4 py-2.5 rounded-lg font-semibold transition-all flex items-center gap-2 ${
+                    statusFilter === filter.value
+                      ? 'bg-[#2563EB] text-white shadow-lg shadow-blue-200'
+                      : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:border-[#2563EB] hover:text-[#2563EB]'
+                  }`}
+                >
+                  <FilterIcon size={16} />
+                  <span>{filter.label}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                    statusFilter === filter.value
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-[#64748B]'
+                  }`}>
+                    {filter.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
           {/* Search & Filter */}
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#64748B]" size={20} />
             <input
               type="text"
-              placeholder="Rechercher par client, template ou statut..."
+              placeholder={user?.role === 'admin' ? "Rechercher par client ou commercial..." : "Rechercher par client..."}
               className="input pl-12 h-14 text-lg"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -369,14 +623,19 @@ const Documents: React.FC = () => {
                 <Loader2 className="animate-spin mx-auto mb-4" size={40} />
                 <p>Chargement des documents...</p>
               </div>
-            ) : documents.length === 0 ? (
-              <div className="p-12 text-center text-[#64748B] italic">Aucun document envoyé</div>
+            ) : filteredDocuments.length === 0 ? (
+              <div className="p-12 text-center text-[#64748B] italic">
+                {documents.length === 0 ? 'Aucun document envoyé' : 'Aucun document ne correspond aux filtres'}
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-gray-50/50 border-b border-[#E2E8F0]">
                       <th className="px-6 py-3 text-xs font-semibold text-[#64748B] uppercase tracking-wider">Client</th>
+                      {user?.role === 'admin' && (
+                        <th className="px-6 py-3 text-xs font-semibold text-[#64748B] uppercase tracking-wider">Commercial</th>
+                      )}
                       <th className="px-6 py-3 text-xs font-semibold text-[#64748B] uppercase tracking-wider">Template</th>
                       <th className="px-6 py-3 text-xs font-semibold text-[#64748B] uppercase tracking-wider">Statut</th>
                       <th className="px-6 py-3 text-xs font-semibold text-[#64748B] uppercase tracking-wider">Envoyé le</th>
@@ -385,7 +644,7 @@ const Documents: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#E2E8F0]">
-                    {documents.map((doc) => {
+                    {filteredDocuments.map((doc) => {
                       const statusColor = getStatusColor(doc.status);
                       const StatusIcon = statusColor.icon;
                       
@@ -410,6 +669,22 @@ const Documents: React.FC = () => {
                               </div>
                             </div>
                           </td>
+                          
+                          {/* COLONNE COMMERCIAL (Admin uniquement) */}
+                          {user?.role === 'admin' && (
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-2 text-sm">
+                                <User size={14} className="text-[#64748B]" />
+                                <div>
+                                  <span className="font-semibold text-[#0F172A]">
+                                    {doc.sender_first_name} {doc.sender_last_name}
+                                  </span>
+                                  <p className="text-xs text-[#64748B]">{doc.sender_email}</p>
+                                </div>
+                              </div>
+                            </td>
+                          )}
+                          
                           <td className="px-6 py-4 text-sm text-[#64748B]">{doc.template_name}</td>
                           <td className="px-6 py-4">
                             <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold ${statusColor.bg} ${statusColor.border} border ${statusColor.text}`}>
@@ -444,14 +719,18 @@ const Documents: React.FC = () => {
                           </td>
                           <td className="px-6 py-4 text-right">
                             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button 
+                              <button
                                 title="Voir les détails"
+                                onClick={() => { setSelectedDoc(doc); setShowDetailsModal(true); }}
                                 className="p-2 hover:bg-blue-50 text-[#2563EB] rounded-md transition-all">
                                 <Eye size={16} />
                               </button>
-                              {doc.status === 'signed' && (
-                                <button 
-                                  title="Télécharger"
+                              
+                              {/* BOUTON TÉLÉCHARGEMENT (Admin + Signed) */}
+                              {user?.role === 'admin' && doc.status === 'signed' && (
+                                <button
+                                  title="Télécharger le PDF signé"
+                                  onClick={() => handleDownload(doc.id, doc.template_name, doc.client_prenom, doc.client_nom)}
                                   className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-md transition-all">
                                   <Download size={16} />
                                 </button>
@@ -644,8 +923,9 @@ const Documents: React.FC = () => {
                 <div className="card p-8 space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {templateFieldsResponse.mappings.map((mapping) => {
-                      // Déterminer si le champ est auto-rempli
-                      const isAutoFilled = mapping.contact_field_name !== null;
+                      // Déterminer si le champ est auto-rempli OU ignoré (rempli par le client)
+                      const isAutoFilled = mapping.contact_field_name !== null || mapping.source_category === 'ignore';
+                      const isIgnored = mapping.source_category === 'ignore';
                       const autoFilledSource = mapping.fusion ? 'Nom + Prénom fusionnés' : mapping.label;
                       
                       return (
@@ -654,27 +934,30 @@ const Documents: React.FC = () => {
                             <label className="block text-xs font-bold text-[#0F172A] uppercase tracking-wider ml-1 flex-1">
                               {mapping.label}
                             </label>
-                            {isAutoFilled && (
+                            {isIgnored && (
+                              <span className="px-2.5 py-1 bg-purple-100 text-purple-700 text-[10px] font-bold rounded-md whitespace-nowrap">
+                                ✍️ CLIENT
+                              </span>
+                            )}
+                            {!isIgnored && isAutoFilled && (
                               <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-md whitespace-nowrap">
                                 ✓ CONTACT
                               </span>
                             )}
-                            {!isAutoFilled && (
+                            {!isAutoFilled && !isIgnored && (
                               <span className="px-2.5 py-1 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-md whitespace-nowrap">
                                 ✎ À REMPLIR
                               </span>
                             )}
                           </div>
-                          <input
-                            type={mapping.field_type === 'email' ? 'email' : mapping.field_type === 'number' ? 'number' : 'text'}
-                            required={mapping.is_required}
-                            value={formData[mapping.docuseal_field_name] || ''}
-                            onChange={(e) => setFormData({ ...formData, [mapping.docuseal_field_name]: e.target.value })}
-                            placeholder={isAutoFilled ? `Auto-rempli: ${autoFilledSource}` : `Veuillez remplir ce champ`}
-                            className={`input transition-all ${isAutoFilled ? 'bg-emerald-50 border-emerald-200 cursor-not-allowed' : 'bg-white'}`}
-                            readOnly={isAutoFilled}
-                          />
-                          {isAutoFilled && (
+                          
+                          {/* Rendu dynamique selon le type de champ */}
+                          {renderFieldInput(mapping, isIgnored, isAutoFilled, autoFilledSource)}
+                          
+                          {isIgnored && (
+                            <p className="text-xs text-purple-700 ml-1">✍️ Ce champ sera rempli par le destinataire lors de la signature</p>
+                          )}
+                          {!isIgnored && isAutoFilled && (
                             <p className="text-xs text-emerald-700 ml-1">📌 Pré-rempli depuis le contact</p>
                           )}
                         </div>
@@ -982,6 +1265,201 @@ const Documents: React.FC = () => {
                   </div>
                 </>
               )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL DE DÉTAILS */}
+      <AnimatePresence>
+        {showDetailsModal && selectedDoc && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setShowDetailsModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="sticky top-0 bg-white border-b border-[#E2E8F0] p-6 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                    <Eye className="text-[#2563EB]" size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-[#0F172A]">Détails du document</h3>
+                    <p className="text-sm text-[#64748B]">{selectedDoc.template_name}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowDetailsModal(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X size={20} className="text-[#64748B]" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 space-y-6">
+                {/* Client Info */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="text-sm font-bold text-[#0F172A] mb-3 flex items-center gap-2">
+                    <User size={16} />
+                    Informations Client
+                  </h4>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-[#64748B] text-xs uppercase tracking-wider font-semibold mb-1">Nom complet</p>
+                      <p className="font-semibold text-[#0F172A]">{selectedDoc.client_prenom} {selectedDoc.client_nom}</p>
+                    </div>
+                    <div>
+                      <p className="text-[#64748B] text-xs uppercase tracking-wider font-semibold mb-1">Entreprise</p>
+                      <p className="font-semibold text-[#0F172A]">{selectedDoc.client_entreprise}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Commercial Info (Admin only) */}
+                {user?.role === 'admin' && (
+                  <div className="bg-blue-50 rounded-lg p-4">
+                    <h4 className="text-sm font-bold text-[#0F172A] mb-3 flex items-center gap-2">
+                      <User size={16} />
+                      Commercial responsable
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-[#64748B] text-xs uppercase tracking-wider font-semibold mb-1">Nom</p>
+                        <p className="font-semibold text-[#0F172A]">{selectedDoc.sender_first_name} {selectedDoc.sender_last_name}</p>
+                      </div>
+                      <div>
+                        <p className="text-[#64748B] text-xs uppercase tracking-wider font-semibold mb-1">Email</p>
+                        <p className="font-semibold text-[#0F172A]">{selectedDoc.sender_email}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Timeline */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h4 className="text-sm font-bold text-[#0F172A] mb-3 flex items-center gap-2">
+                    <Clock size={16} />
+                    Historique
+                  </h4>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+                      <div className="flex-1">
+                        <p className="text-xs text-[#64748B] uppercase tracking-wider font-semibold">Envoyé le</p>
+                        <p className="text-sm font-semibold text-[#0F172A]">
+                          {new Date(selectedDoc.sent_at).toLocaleDateString('fr-FR', {
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {selectedDoc.status === 'opened' && (
+                      <div className="flex items-start gap-3">
+                        <div className="w-2 h-2 bg-yellow-500 rounded-full mt-2"></div>
+                        <div className="flex-1">
+                          <p className="text-xs text-[#64748B] uppercase tracking-wider font-semibold">Ouvert le</p>
+                          <p className="text-sm font-semibold text-[#0F172A]">
+                            {new Date(selectedDoc.updated_at).toLocaleDateString('fr-FR', {
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedDoc.status === 'signed' && (
+                      <div className="flex items-start gap-3">
+                        <div className="w-2 h-2 bg-emerald-500 rounded-full mt-2"></div>
+                        <div className="flex-1">
+                          <p className="text-xs text-[#64748B] uppercase tracking-wider font-semibold">Signé le</p>
+                          <p className="text-sm font-semibold text-[#0F172A]">
+                            {new Date(selectedDoc.updated_at).toLocaleDateString('fr-FR', {
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedDoc.expires_at && (
+                      <div className="flex items-start gap-3">
+                        <div className="w-2 h-2 bg-gray-400 rounded-full mt-2"></div>
+                        <div className="flex-1">
+                          <p className="text-xs text-[#64748B] uppercase tracking-wider font-semibold">
+                            {selectedDoc.status === 'expired' ? 'Expiré le' : 'Expire le'}
+                          </p>
+                          <p className="text-sm font-semibold text-[#0F172A]">
+                            {new Date(selectedDoc.expires_at).toLocaleDateString('fr-FR', {
+                              day: 'numeric',
+                              month: 'long',
+                              year: 'numeric'
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Dynamic Data */}
+                {selectedDoc.dynamic_data && (
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h4 className="text-sm font-bold text-[#0F172A] mb-3 flex items-center gap-2">
+                      <FileText size={16} />
+                      Données saisies
+                    </h4>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      {Object.entries(JSON.parse(selectedDoc.dynamic_data)).map(([key, value]) => (
+                        <div key={key}>
+                          <p className="text-[#64748B] text-xs uppercase tracking-wider font-semibold mb-1">{key}</p>
+                          <p className="font-semibold text-[#0F172A]">{value as string}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* DocuSeal Link */}
+                <div className="flex gap-3">
+                  <button
+onClick={() => window.open(`https://docuseal.co/submissions/${selectedDoc.docuseal_submission_id}`, '_blank')}
+                    className="btn-secondary flex-1 flex items-center justify-center gap-2"
+                  >
+                    <Eye size={18} />
+                    Voir sur DocuSeal
+                  </button>
+                  <button
+                    onClick={() => setShowDetailsModal(false)}
+                    className="btn-primary flex-1"
+                  >
+                    Fermer
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </motion.div>
         )}

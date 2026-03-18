@@ -50,3 +50,19 @@
   .badge-red { @apply bg-red-50 text-red-600 border border-red-100; }
   .badge-amber { @apply bg-amber-50 text-amber-600 border border-amber-100; }
 }
+
+/* Styles pour les checkboxes */
+input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: #2563EB;
+}
+
+input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+input[type="checkbox"]:focus {
+  outline: 2px solid #2563EB;
+  outline-offset: 2px;
+}

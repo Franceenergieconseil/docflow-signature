@@ -252,7 +252,7 @@ const Clients: React.FC = () => {
       {/* Modal Nouveau Client */}
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6 overflow-y-auto">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -264,9 +264,9 @@ const Clients: React.FC = () => {
               initial={{ opacity: 0, y: 20, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.95 }}
-              className="relative w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden border border-[#E2E8F0]"
+              className="relative w-full max-w-lg bg-white rounded-xl shadow-2xl border border-[#E2E8F0] my-8 max-h-[90vh] flex flex-col"
             >
-              <div className="p-8">
+              <div className="p-6 md:p-8 overflow-y-auto">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-xl font-bold tracking-tight">Nouveau Client</h3>
                   <button onClick={() => setIsModalOpen(false)} className="text-[#64748B] hover:text-[#0F172A]">

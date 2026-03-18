@@ -5,24 +5,26 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
+  const isMiddleware = process.env.VITE_MIDDLEWARE === 'true';
+  
   return {
     plugins: [react(), tailwindcss()],
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',      proxy: {
-        '/api': {
-          target: 'http://localhost:3000',
-          changeOrigin: true,
+      hmr: process.env.DISABLE_HMR !== 'true',
+      // Ne pas proxifier /api en mode middleware (Express gère déjà /api)
+      ...(!isMiddleware && {
+        proxy: {
+          '/api': {
+            target: 'http://localhost:3000',
+            changeOrigin: true,
+          },
         },
-      },    },
+      }),
+    },
   };
 });

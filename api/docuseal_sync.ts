@@ -48,27 +48,7 @@ router.get('/templates/sync', authenticateToken, async (req, res) => {
       console.log(`  Template: id=${t.id}, name=${t.name}, has_fields=${!!t.fields}`);
     });
 
-    // Étape 1 : Nettoyer les modèles d'exemple (respecter les contraintes FK)
-    console.log('🗑️  Nettoyage des modèles d\'exemple (ID 101, 102)...');
-    try {
-      // Désactiver temporairement les FK pour éviter les conflits
-      db.pragma('foreign_keys = OFF');
-      
-      // Supprimer les templates d'exemple directement
-      const tplDeleteResult = db.prepare(`
-        DELETE FROM document_templates 
-        WHERE id_docuseal IN (101, 102)
-      `).run();
-      console.log(`  ✓ Example templates deleted: ${(tplDeleteResult as any).changes || 0}`);
-
-      // Réactiver les FK
-      db.pragma('foreign_keys = ON');
-    } catch (cleanupError: any) {
-      console.error('⚠️  Erreur lors du nettoyage:', cleanupError.message);
-      db.pragma('foreign_keys = ON'); // Réactiver même en cas d'erreur
-    }
-
-    // Étape 2 : Insérer ou mettre à jour les templates avec UPSERT (clé: id_docuseal)
+    // Insérer ou mettre à jour les templates avec UPSERT (clé: id_docuseal)
     const insertStmt = db.prepare(`
       INSERT INTO document_templates (id_docuseal, nom_template, slug, schema, created_at)
       VALUES (?, ?, ?, ?, ?)

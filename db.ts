@@ -178,29 +178,18 @@ try {
     // Colonne existe déjà
   }
 
-  // Nettoyer les données d'exemple (ID 101, 102)
-  console.log('\n🗑️  Cleaning up example templates (ID 101, 102)...');
-  
-  // D'abord, supprimer les documents liés aux templates d'exemple
-  const docDeleteResult = db.prepare(`
-    DELETE FROM documents 
-    WHERE template_id IN (SELECT id FROM document_templates WHERE id_docuseal IN (101, 102))
-  `).run();
-  console.log(`  ✓ Orphaned documents deleted: ${(docDeleteResult as any).changes || 0}`);
+  // Ajouter la colonne source_category pour la catégorisation des mappings
+  try {
+    db.exec("ALTER TABLE template_field_mappings ADD COLUMN source_category TEXT DEFAULT 'dynamique'");
+    console.log('✓ Column source_category added to template_field_mappings');
+  } catch (e) {
+    // Colonne existe déjà
+  }
 
-  // Ensuite, supprimer les template_fields liés
-  const fieldsDeleteResult = db.prepare(`
-    DELETE FROM template_fields 
-    WHERE template_id IN (SELECT id FROM document_templates WHERE id_docuseal IN (101, 102))
-  `).run();
-  console.log(`  ✓ Template fields deleted: ${(fieldsDeleteResult as any).changes || 0}`);
-
-  // Finalement, supprimer les templates d'exemple
-  const tplDeleteResult = db.prepare(`
-    DELETE FROM document_templates 
-    WHERE id_docuseal IN (101, 102)
-  `).run();
-  console.log(`  ✓ Example templates deleted: ${(tplDeleteResult as any).changes || 0}`);
+  // NOTE: La colonne fusion existe déjà en tant que INTEGER.
+  // SQLite ne supporte pas ALTER COLUMN TYPE, mais TEXT peut stocker du JSON.
+  // La colonne fusion actuelle (INTEGER) sera progressivement remplacée par des valeurs JSON.
+  // Les valeurs 0/1 seront converties côté application en JSON approprié.
 
   // Insérer l'utilisateur admin par défaut s'il n'existe pas
   try {

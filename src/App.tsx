@@ -12,17 +12,23 @@ import Users from './pages/Users';
 const AppContent: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [documentsFilter, setDocumentsFilter] = useState<'all' | 'pending' | 'signed' | 'archived'>('all');
 
   if (!isAuthenticated) {
     return <Login />;
   }
 
+  const handleNavigateToDocuments = (filter: 'all' | 'pending' | 'signed' | 'archived') => {
+    setDocumentsFilter(filter);
+    setActiveTab('documents');
+  };
+
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab}>
-      {activeTab === 'dashboard' && <Dashboard />}
+      {activeTab === 'dashboard' && <Dashboard onNavigateToDocuments={handleNavigateToDocuments} />}
       {activeTab === 'admin-dashboard' && <AdminDashboard />}
       {activeTab === 'clients' && <Clients />}
-      {activeTab === 'documents' && <Documents />}
+      {activeTab === 'documents' && <Documents initialFilter={documentsFilter} />}
       {activeTab === 'templates' && <Templates />}
       {activeTab === 'users' && <Users />}
     </Layout>

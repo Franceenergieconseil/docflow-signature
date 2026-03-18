@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import db from '../db.ts';
-import { authenticateToken } from './auth.ts';
+import { authenticateToken, isAdmin } from './auth.ts';
 import { docusealApi } from './docuseal.ts';
 
 const router = Router();
@@ -9,11 +9,14 @@ const router = Router();
 router.get('/', authenticateToken, (req: any, res) => {
   try {
     let query = `
-      SELECT d.*, c.prenom as client_prenom, c.nom as client_nom, c.entreprise as client_entreprise,
-             t.nom_template as template_name
+      SELECT d.*,
+             c.prenom as client_prenom, c.nom as client_nom, c.entreprise as client_entreprise,
+             t.nom_template as template_name,
+             u.first_name as sender_first_name, u.last_name as sender_last_name, u.email as sender_email
       FROM documents d
       JOIN clients c ON d.client_id = c.id
       JOIN document_templates t ON d.template_id = t.id
+      JOIN users u ON d.sender_id = u.id
     `;
     
     const params: any[] = [];
@@ -54,28 +57,53 @@ router.post('/send', authenticateToken, async (req: any, res) => {
       WHERE template_id = ?
     `).all(template_id);
 
-    // Construire les données à envoyer à DocuSeal avec les mappings
-    const submissionFields: any = {};
+    // Construire les données à envoyer à DocuSeal avec les mappings (FORMAT ARRAY)
+    const submissionFields: any[] = [];
     
-    // D'abord, ajouter les champs mappés
+    // Parcourir les champs mappés
     mappings.forEach((mapping: any) => {
+      // ⚠️ IGNORER les champs marqués comme 'ignore' (à remplir par le client)
+      if (mapping.source_category === 'ignore') {
+        console.log(`  ⏭️ Champ ignoré (rempli par le client): ${mapping.docuseal_field_name}`);
+        return; // Ne pas inclure dans les fields
+      }
+
+      // ⚠️ IGNORER les champs de type "signature" (toujours remplis par le client)
+      if (mapping.field_type === 'signature') {
+        console.log(`  ⏭️ Champ signature ignoré: ${mapping.docuseal_field_name}`);
+        return;
+      }
+
+      let fieldValue = '';
+      
       if (mapping.contact_field_name) {
         if (mapping.fusion) {
           // Cas fusion nom + prénom
           const nom = client.nom || '';
           const prenom = client.prenom || '';
-          submissionFields[mapping.docuseal_field_name] = `${prenom} ${nom}`.trim();
+          fieldValue = `${prenom} ${nom}`.trim();
         } else {
           // Mappage simple depuis le contact
-          submissionFields[mapping.docuseal_field_name] = client[mapping.contact_field_name] || '';
+          fieldValue = client[mapping.contact_field_name] || '';
         }
       } else {
         // Champ dynamique - utiliser la valeur du formulaire
-        submissionFields[mapping.docuseal_field_name] = dynamic_data[mapping.docuseal_field_name] || '';
+        fieldValue = dynamic_data[mapping.docuseal_field_name] || '';
       }
+
+      // Ajouter le champ au tableau (format DocuSeal)
+      submissionFields.push({
+        name: mapping.docuseal_field_name,
+        value: fieldValue
+      });
     });
 
-    // Prepare Docuseal submission
+    // Préparer les paramètres pour DocuSeal
+    console.log('📤 Préparation envoi DocuSeal:');
+    console.log('  Template ID (DocuSeal):', template.id_docuseal);
+    console.log('  Client Email:', client.email);
+    console.log('  Champs mappés:', JSON.stringify(submissionFields, null, 2));
+
     const docusealParams: any = {
       template_id: template.id_docuseal,
       send_email: true,
@@ -92,6 +120,7 @@ router.post('/send', authenticateToken, async (req: any, res) => {
       docusealParams.expires_at = new Date(expires_at).toISOString();
     }
 
+    console.log('📡 Envoi vers DocuSeal API:', JSON.stringify(docusealParams, null, 2));
     const submission = await docusealApi.sendDocument(docusealParams);
 
     // 6. SAUVEGARDE DU DOCUMENT ENVOYÉ
@@ -217,6 +246,90 @@ router.delete('/:id', authenticateToken, (req: any, res) => {
   } catch (error: any) {
     console.error('Error deleting document:', error);
     res.status(500).json({ success: false, message: error.message || "Erreur lors de la suppression du document" });
+  }
+});
+
+// GET /api/documents/:id/download - Télécharger le PDF signé (Admin uniquement)
+router.get('/:id/download', authenticateToken, isAdmin, async (req: any, res) => {
+  const { id } = req.params;
+
+  try {
+    // 1. Récupérer le document avec docuseal_submission_id
+    const document: any = db.prepare(`
+      SELECT d.docuseal_submission_id, d.status, t.nom_template as template_name,
+             c.prenom as client_prenom, c.nom as client_nom
+      FROM documents d
+      JOIN clients c ON d.client_id = c.id
+      JOIN document_templates t ON d.template_id = t.id
+      WHERE d.id = ?
+    `).get(id);
+
+    if (!document) {
+      return res.status(404).json({ success: false, message: "Document non trouvé" });
+    }
+
+    // 2. Vérifier que le document est signé
+    if (document.status !== 'signed') {
+      return res.status(400).json({
+        success: false,
+        message: `Le document n'est pas signé (statut actuel : ${document.status})`
+      });
+    }
+
+    // 3. Récupérer le PDF depuis DocuSeal API
+    const DOCUSEAL_API_URL = process.env.DOCUSEAL_API_URL || 'https://docsign.f-energieconseil.fr';
+    const API_KEY = process.env.DOCUSEAL_API_KEY;
+    
+    // Construire l'URL complète de l'API (avec /api si nécessaire)
+    let apiBaseUrl = DOCUSEAL_API_URL;
+    if (!apiBaseUrl.includes('api.docuseal.com') && !apiBaseUrl.endsWith('/api')) {
+      apiBaseUrl = apiBaseUrl.endsWith('/') ? `${apiBaseUrl}api` : `${apiBaseUrl}/api`;
+    }
+
+    console.log(`📥 Récupération du PDF depuis DocuSeal : submission ${document.docuseal_submission_id}`);
+
+    const response = await fetch(
+      `${apiBaseUrl}/submissions/${document.docuseal_submission_id}/download`,
+      {
+        headers: { 'X-Auth-Token': API_KEY }
+      }
+    );
+
+    if (!response.ok) {
+      console.error('❌ Erreur DocuSeal:', response.status, response.statusText);
+      const errorText = await response.text();
+      console.error('Détails:', errorText);
+      return res.status(500).json({
+        success: false,
+        message: `Impossible de récupérer le PDF depuis DocuSeal (${response.status})`
+      });
+    }
+
+    // 4. Générer un nom de fichier propre
+    const fileName = `${document.template_name}_${document.client_prenom}_${document.client_nom}.pdf`
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9_.-]/g, '');
+
+    // 5. Transférer le PDF au client
+    const pdfBuffer = await response.arrayBuffer();
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdfBuffer.byteLength.toString());
+    
+    res.send(Buffer.from(pdfBuffer));
+
+    // 6. Logger l'activité
+    db.prepare('INSERT INTO activities (user_id, action, details) VALUES (?, ?, ?)')
+      .run(req.user.id, 'download_document', `Téléchargement du document ID ${id} : ${fileName}`);
+
+    console.log(`✅ Document téléchargé : ${fileName} par ${req.user.email}`);
+  } catch (error: any) {
+    console.error('❌ Erreur téléchargement document:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || "Erreur lors du téléchargement"
+    });
   }
 });
 

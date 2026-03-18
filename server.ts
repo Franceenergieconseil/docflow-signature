@@ -81,30 +81,18 @@ async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
+    
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        // Avoid HMR port conflicts when restarting the dev server quickly.
         hmr: { port: Number(process.env.VITE_HMR_PORT) || 24679 },
       },
       appType: "spa",
-      root: path.resolve(__dirname),
+      root: process.cwd(),
     });
 
     app.use(vite.middlewares);
-
-    // Force return of the React app for all non-API GET requests (helps when Vite middleware is not returning index)
-    app.get('*', async (req, res, next) => {
-      if (req.path.startsWith('/api/')) return next();
-
-      try {
-        const indexHtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf-8');
-        const html = await vite.transformIndexHtml(req.originalUrl, indexHtml);
-        res.status(200).set({ 'Content-Type': 'text/html' }).send(html);
-      } catch (err) {
-        next(err);
-      }
-    });
+    console.log('🚀 Vite dev server started');
   } else {
     app.use(express.static(distPath));
 
@@ -145,6 +133,10 @@ async function startServer() {
   };
 
   start(PORT);
+  
+  // Log de confirmation du webhook configuré
+  const webhookUrl = process.env.APP_URL || `http://localhost:${PORT}`;
+  console.log(`\n🚀 Webhook DocuSeal activé sur ${webhookUrl}/api/webhooks/docuseal\n`);
 }
 
 startServer().catch(err => {
