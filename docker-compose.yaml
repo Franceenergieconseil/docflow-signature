@@ -1,15 +1,15 @@
 version: '3.8'
 
 services:
-  app:
+  docflow:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runner
+    image: docflow-signature:latest
     container_name: docflow-app
-    ports:
-      - "3000:3000"
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=${NODE_ENV:-production}
       - DATABASE_PATH=/app/data/database.sqlite
       - PORT=3000
       # Variables à renseigner dans Coolify (Secrets)
@@ -21,6 +21,8 @@ services:
     volumes:
       # Volume nommé persistant pour la base de données SQLite
       - docflow_db:/app/data
+    expose:
+      - "3000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));"]
