@@ -70,25 +70,68 @@ router.post('/docuseal', (req: any, res) => {
     // 2️⃣ EXTRACTION DES DONNÉES
     const { event_type, data } = req.body;
 
-    // Validation du format
-    if (!data || !data.id) {
-      console.error('❌ Payload invalide : data.id manquant');
-      return res.status(400).json({ error: 'Invalid payload format' });
+    // Validation du format — l'ID peut être à la racine (data.id) ou dans data.submission.id
+    const submissionId = data?.id ?? data?.submission?.id;
+    if (!submissionId) {
+      console.error('❌ Payload invalide : aucun ID de soumission trouvé');
+      console.error('   data reçu:', JSON.stringify(data, null, 2));
+      return res.status(400).json({ error: 'Invalid payload format: missing submission id' });
     }
 
-    // 3️⃣ MAPPER LES ÉVÉNEMENTS DOCUSEAL À NOS STATUTS
-    let status = 'sent';
-    if (event_type === 'submission.completed') status = 'signed';
-    else if (event_type === 'submission.opened') status = 'opened';
-    else if (event_type === 'submission.declined') status = 'declined';
-    else if (event_type === 'submission.expired') status = 'expired';
+    console.log(`📦 event_type: "${event_type}" | submission id: ${submissionId} | data.status: "${data?.status}"`);
 
-    console.log(`📊 Événement: ${event_type} → Statut: ${status}`);
+    // 3️⃣ MAPPER LE STATUT — DOUBLE STRATÉGIE
+    // Priorité 1 : data.status (statut de l'objet submission dans le payload).
+    //   DocuSeal peut envoyer submission.created avec data.status="completed" quand
+    //   un document est signé avant que le webhook "completed" soit déclenché.
+    // Priorité 2 : event_type (fallback classique).
+    //
+    // Règle de non-régression : on n'écrase JAMAIS un statut "terminal"
+    // (signed, declined, expired) par un statut inférieur (sent, opened).
+    const TERMINAL_STATUSES = ['signed', 'declined', 'expired'];
 
-    // 4️⃣ EXTRAIRE LES DONNÉES DES CHAMPS REMPLIS (si completed)
+    const statusFromData = (() => {
+      const s = data?.status;
+      if (s === 'completed') return 'signed';
+      if (s === 'opened')    return 'opened';
+      if (s === 'declined')  return 'declined';
+      if (s === 'expired')   return 'expired';
+      return null; // statut inconnu ou absent dans data
+    })();
+
+    const statusFromEvent = (() => {
+      if (event_type === 'submission.completed') return 'signed';
+      if (event_type === 'submission.opened')    return 'opened';
+      if (event_type === 'submission.declined')  return 'declined';
+      if (event_type === 'submission.expired')   return 'expired';
+      return null; // ex: submission.created → pas de mise à jour par défaut
+    })();
+
+    // On choisit le statut le plus informatif disponible
+    const resolvedStatus = statusFromData ?? statusFromEvent;
+
+    if (!resolvedStatus) {
+      console.log(`⏭️ Événement "${event_type}" ignoré (aucun statut significatif à mettre à jour)`);
+      return res.sendStatus(200);
+    }
+
+    // Vérifier le statut actuel en BDD pour ne pas rétrograder
+    const currentDoc: any = db.prepare(
+      'SELECT status FROM documents WHERE docuseal_submission_id = ?'
+    ).get(submissionId);
+
+    if (currentDoc && TERMINAL_STATUSES.includes(currentDoc.status)) {
+      console.log(`⏭️ Statut actuel "${currentDoc.status}" est terminal — mise à jour ignorée (résolu: "${resolvedStatus}")`);
+      return res.sendStatus(200);
+    }
+
+    const status = resolvedStatus;
+    console.log(`📊 Statut résolu : event="${event_type}" + data.status="${data?.status}" → BDD="${status}"`);
+
+    // 4️⃣ EXTRAIRE LES DONNÉES DES CHAMPS REMPLIS (si signed)
     let fieldsData: any = null;
     
-    if (event_type === 'submission.completed' && data.submitters && Array.isArray(data.submitters)) {
+    if (status === 'signed' && data.submitters && Array.isArray(data.submitters)) {
       try {
         // Récupérer les valeurs du premier signataire
         const firstSubmitter = data.submitters[0];
@@ -116,7 +159,7 @@ router.post('/docuseal', (req: any, res) => {
         SET status = ?, dynamic_data = ?, updated_at = CURRENT_TIMESTAMP 
         WHERE docuseal_submission_id = ?
       `;
-      params = [status, JSON.stringify(fieldsData), data.id];
+      params = [status, JSON.stringify(fieldsData), submissionId];
       console.log('🔄 Mise à jour du statut ET des données');
     } else {
       // Mettre à jour uniquement le statut
@@ -125,7 +168,7 @@ router.post('/docuseal', (req: any, res) => {
         SET status = ?, updated_at = CURRENT_TIMESTAMP 
         WHERE docuseal_submission_id = ?
       `;
-      params = [status, data.id];
+      params = [status, submissionId];
       console.log('🔄 Mise à jour du statut uniquement');
     }
 
@@ -136,7 +179,7 @@ router.post('/docuseal', (req: any, res) => {
       // Récupérer le document pour obtenir user_id
       const doc: any = db.prepare(
         'SELECT sender_id FROM documents WHERE docuseal_submission_id = ?'
-      ).get(data.id);
+      ).get(submissionId);
       
       if (doc) {
         const detailsMsg = fieldsData 
@@ -153,9 +196,10 @@ router.post('/docuseal', (req: any, res) => {
         );
       }
 
-      console.log(`✅ Document ${data.id} mis à jour avec succès (statut: ${status})`);
+      console.log(`✅ Document submission_id=${submissionId} mis à jour avec succès (statut: ${status})`);
     } else {
-      console.warn(`⚠️ Aucun document trouvé pour submission_id: ${data.id}`);
+      console.warn(`⚠️ Aucun document trouvé pour submission_id: ${submissionId}`);
+      console.warn(`   Vérifiez que la colonne docuseal_submission_id est bien renseignée en BDD`);
     }
 
   } catch (error) {
