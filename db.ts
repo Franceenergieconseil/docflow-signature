@@ -178,6 +178,16 @@ try {
     // Colonne existe déjà
   }
 
+  try {
+    db.exec("ALTER TABLE clients ADD COLUMN assigned_to INTEGER REFERENCES users(id) ON DELETE SET NULL");
+    console.log('✓ Column assigned_to added to clients');
+    // Peupler assigned_to avec created_by pour les données historiques
+    db.exec("UPDATE clients SET assigned_to = created_by WHERE assigned_to IS NULL");
+    console.log('✓ Backfilled assigned_to from created_by for existing clients');
+  } catch (e) {
+    // Colonne existe déjà
+  }
+
   // Ajouter la colonne source_category pour la catégorisation des mappings
   try {
     db.exec("ALTER TABLE template_field_mappings ADD COLUMN source_category TEXT DEFAULT 'dynamique'");

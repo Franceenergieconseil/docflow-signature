@@ -8,7 +8,24 @@ const router = Router();
 router.get('/', authenticateToken, (req: any, res) => {
   try {
     console.log('GET /api/clients hit');
-    const clients = db.prepare('SELECT * FROM clients ORDER BY created_at DESC').all();
+
+    let query = `
+      SELECT c.*,
+             u.first_name AS commercial_prenom,
+             u.last_name  AS commercial_nom
+      FROM clients c
+      LEFT JOIN users u ON c.assigned_to = u.id
+    `;
+
+    const params: any[] = [];
+    if (req.user.role !== 'admin') {
+      query += ' WHERE c.assigned_to = ?';
+      params.push(req.user.id);
+    }
+
+    query += ' ORDER BY c.created_at DESC';
+
+    const clients = db.prepare(query).all(...params);
     res.json({ success: true, data: clients });
   } catch (error) {
     console.error('Error fetching clients:', error);
@@ -26,9 +43,9 @@ router.post('/', authenticateToken, (req: any, res) => {
 
   try {
     const result = db.prepare(`
-      INSERT INTO clients (prenom, nom, email, entreprise, siret, adresse, fonction, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(prenom, nom, email, entreprise, siret || null, adresse || null, fonction || null, req.user.id);
+      INSERT INTO clients (prenom, nom, email, entreprise, siret, adresse, fonction, created_by, assigned_to)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(prenom, nom, email, entreprise, siret || null, adresse || null, fonction || null, req.user.id, req.user.id);
 
     const newClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
     

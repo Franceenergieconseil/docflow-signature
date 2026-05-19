@@ -12,6 +12,9 @@ interface Client {
   entreprise: string;
   siret?: string;
   adresse?: string;
+  assigned_to?: number;
+  commercial_prenom?: string;
+  commercial_nom?: string;
   created_at: string;
 }
 
@@ -22,7 +25,7 @@ interface Template {
 }
 
 const Clients: React.FC = () => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [clients, setClients] = useState<Client[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -185,17 +188,20 @@ const Clients: React.FC = () => {
                 <th className="px-6 py-3 text-xs font-semibold text-[#64748B] uppercase tracking-wider">Nom</th>
                 <th className="px-6 py-3 text-xs font-semibold text-[#64748B] uppercase tracking-wider">Entreprise</th>
                 <th className="px-6 py-3 text-xs font-semibold text-[#64748B] uppercase tracking-wider">Email</th>
+                {user?.role === 'admin' && (
+                  <th className="px-6 py-3 text-xs font-semibold text-[#64748B] uppercase tracking-wider">Commercial</th>
+                )}
                 <th className="px-6 py-3 text-xs font-semibold text-[#64748B] uppercase tracking-wider text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#E2E8F0]">
               {loading ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-[#64748B] italic text-sm">Chargement des clients...</td>
+                  <td colSpan={user?.role === 'admin' ? 5 : 4} className="px-6 py-12 text-center text-[#64748B] italic text-sm">Chargement des clients...</td>
                 </tr>
               ) : filteredClients.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-[#64748B] italic text-sm">Aucun client trouvé</td>
+                  <td colSpan={user?.role === 'admin' ? 5 : 4} className="px-6 py-12 text-center text-[#64748B] italic text-sm">Aucun client trouvé</td>
                 </tr>
               ) : (
                 filteredClients.map((client, i) => (
@@ -220,6 +226,19 @@ const Clients: React.FC = () => {
                         <span>{client.email}</span>
                       </div>
                     </td>
+                    {user?.role === 'admin' && (
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2 text-sm text-[#64748B]">
+                          <UserIcon size={14} className="opacity-50" />
+                          <span>
+                            {client.commercial_prenom && client.commercial_nom
+                              ? `${client.commercial_prenom} ${client.commercial_nom}`
+                              : <span className="italic text-[#94A3B8]">Non assigné</span>
+                            }
+                          </span>
+                        </div>
+                      </td>
+                    )}
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
                         <button 
