@@ -13,6 +13,17 @@ console.log('CWD:', process.cwd());
 console.log('__dirname:', __dirname);
 console.log('NODE_ENV:', process.env.NODE_ENV);
 
+// 🔍 DEBUG: Afficher toutes les variables d'environnement
+console.log('\n🔐 Variables d\'environnement chargées:');
+console.log('   - JWT_SECRET:', process.env.JWT_SECRET ? `Défini (${process.env.JWT_SECRET.length} chars)` : '❌ NON DÉFINI');
+console.log('   - DOCUSEAL_API_KEY:', process.env.DOCUSEAL_API_KEY ? `Défini (${process.env.DOCUSEAL_API_KEY.substring(0, 5)}...${process.env.DOCUSEAL_API_KEY.length} chars)` : '❌ NON DÉFINI');
+console.log('   - DOCUSEAL_API_URL:', process.env.DOCUSEAL_API_URL || '❌ NON DÉFINI');
+console.log('   - DOCUSEAL_WEBHOOK_SECRET:', process.env.DOCUSEAL_WEBHOOK_SECRET ? `Défini (${process.env.DOCUSEAL_WEBHOOK_SECRET.length} chars)` : '❌ NON DÉFINI');
+console.log('   - APP_URL:', process.env.APP_URL || '❌ NON DÉFINI');
+console.log('   - DATABASE_PATH:', process.env.DATABASE_PATH || '❌ NON DÉFINI');
+console.log('\n📋 Toutes les clés process.env disponibles:', Object.keys(process.env).sort().join(', '));
+console.log('');
+
 // Ensure the database and migrations are applied before starting the server
 import './migrate.ts';
 import db from "./db.ts";
@@ -30,7 +41,17 @@ async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
 
   app.use(cors());
-  app.use(express.json());
+
+  // Capture du raw body pour la vérification HMAC du webhook DocuSeal.
+  // L'option `verify` est appelée AVANT que Express parse le JSON — elle reçoit
+  // le Buffer brut et l'attache à req.rawBody pour usage dans webhooks.ts.
+  // Sans cette capture, JSON.stringify(req.body) ne reproduit pas fidèlement
+  // le payload original (ordre des clés, encodage) et la signature HMAC échoue.
+  app.use(express.json({
+    verify: (req: any, _res, buf) => {
+      req.rawBody = buf;
+    }
+  }));
 
   // Request logging
   app.use((req, res, next) => {

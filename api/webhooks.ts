@@ -6,8 +6,8 @@ const router = Router();
 
 // 7. WEBHOOK DOCUSEAL - Mise à jour du statut et des données des documents
 // ⚠️ ATTENTION : Cette route est accessible SANS authentification JWT (DocuSeal appelle depuis l'extérieur)
-// ✅ Sécurité : Utilise la vérification de signature HMAC-SHA256
-router.post('/docuseal', (req, res) => {
+// ✅ Sécurité : Utilise la vérification de signature HMAC-SHA256 sur le RAW BODY
+router.post('/docuseal', (req: any, res) => {
   console.log('🔔 Webhook DocuSeal reçu:', JSON.stringify(req.body, null, 2));
   
   try {
@@ -25,17 +25,30 @@ router.post('/docuseal', (req, res) => {
       return res.status(403).json({ error: 'Missing signature header' });
     }
 
-    // Calculer le hash HMAC du payload
-    const payload = JSON.stringify(req.body);
+    // Calculer le hash HMAC sur le RAW BODY (octets bruts reçus sur le réseau).
+    // ⚠️ FIX CRITIQUE : JSON.stringify(req.body) ne reproduit pas fidèlement le
+    // payload original (ordre des clés, encodage) et causait des signatures invalides.
+    // req.rawBody est le Buffer brut capturé dans server.ts via l'option `verify`.
+    if (!req.rawBody) {
+      console.error('❌ req.rawBody absent — vérifier la config verify dans server.ts');
+      return res.status(500).json({ error: 'Raw body not available' });
+    }
+
+    console.log('🔑 Calcul HMAC sur raw body (' + req.rawBody.length + ' octets)');
+
     const expectedSignature = crypto
       .createHmac('sha256', webhookSecret)
-      .update(payload)
+      .update(req.rawBody)
       .digest('hex');
 
     // Comparer les signatures de manière sécurisée (évite les timing attacks)
-    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+    // Les deux buffers doivent avoir la même longueur pour timingSafeEqual
+    const sigBuffer = Buffer.from(signature);
+    const expBuffer = Buffer.from(expectedSignature);
+
+    if (sigBuffer.length !== expBuffer.length || !crypto.timingSafeEqual(sigBuffer, expBuffer)) {
       console.error('❌ Signature invalide ! Tentative d\'accès non autorisé.');
-      console.error('   Signature reçue:', signature);
+      console.error('   Signature reçue   :', signature);
       console.error('   Signature attendue:', expectedSignature);
       return res.status(403).json({ error: 'Invalid signature' });
     }
