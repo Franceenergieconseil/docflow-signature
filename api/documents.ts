@@ -121,7 +121,19 @@ router.post('/send', authenticateToken, async (req: any, res) => {
     }
 
     console.log('📡 Envoi vers DocuSeal API:', JSON.stringify(docusealParams, null, 2));
-    const submission = await docusealApi.sendDocument(docusealParams);
+    const submissionRaw = await docusealApi.sendDocument(docusealParams);
+
+    // DocuSeal peut retourner un objet { id, ... } ou un tableau [{ id, ... }].
+    // On normalise pour toujours travailler avec un objet unique.
+    console.log('📨 Réponse brute DocuSeal:', JSON.stringify(submissionRaw, null, 2));
+    const submission = Array.isArray(submissionRaw) ? submissionRaw[0] : submissionRaw;
+
+    if (!submission || !submission.id) {
+      console.error('❌ DocuSeal n\'a pas retourné d\'ID de soumission valide:', submissionRaw);
+      return res.status(500).json({ message: "DocuSeal n'a pas retourné d'ID de soumission" });
+    }
+
+    console.log('✅ Submission ID DocuSeal:', submission.id);
 
     // 6. SAUVEGARDE DU DOCUMENT ENVOYÉ
     const result = db.prepare(`
