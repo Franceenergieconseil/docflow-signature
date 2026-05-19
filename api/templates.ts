@@ -56,16 +56,40 @@ router.get('/available', authenticateToken, (req, res) => {
 
 /**
  * @route   GET /api/templates/:id/fields
- * @desc    Récupère les champs d'un modèle avec leurs mappings configurés
+ * @desc    Récupère les champs d'un modèle avec leurs mappings configurés.
+ *          Si le schema DocuSeal est absent ou vide en BDD, il est rechargé
+ *          automatiquement depuis l'API DocuSeal avant de répondre.
  */
-router.get('/:templateId/fields', authenticateToken, (req, res) => {
+router.get('/:templateId/fields', authenticateToken, async (req, res) => {
   const { templateId } = req.params;
   try {
     // Récupérer le template pour le schema
-    const template = db.prepare('SELECT * FROM document_templates WHERE id = ?').get(templateId);
+    let template: any = db.prepare('SELECT * FROM document_templates WHERE id = ?').get(templateId);
     
     if (!template) {
       return res.status(404).json({ success: false, message: "Template non trouvé" });
+    }
+
+    // Sync auto : si le schema est absent ou vide, recharger depuis DocuSeal
+    // (même logique que dans /config pour garantir la cohérence entre les deux routes)
+    if (!template.schema || template.schema === '{}' || template.schema === 'null') {
+      console.log(`⚠️ Schema absent pour template ID ${templateId}, synchronisation depuis DocuSeal...`);
+      try {
+        const { docusealApi } = await import('./docuseal.ts');
+        const docusealTemplate = await docusealApi.getTemplateFields(template.id_docuseal);
+        if (docusealTemplate && docusealTemplate.length > 0) {
+          const schemaToSave = JSON.stringify({ fields: docusealTemplate });
+          db.prepare('UPDATE document_templates SET schema = ? WHERE id = ?')
+            .run(schemaToSave, templateId);
+          template.schema = schemaToSave;
+          console.log(`✅ Schema synchronisé : ${docusealTemplate.length} champs récupérés pour template ${templateId}`);
+        } else {
+          console.warn(`⚠️ Aucun champ retourné par DocuSeal pour template id_docuseal=${template.id_docuseal}`);
+        }
+      } catch (syncError: any) {
+        console.error('❌ Erreur lors de la synchronisation DocuSeal:', syncError.message);
+        // On continue avec un schema vide plutôt que de crasher
+      }
     }
 
     // Récupérer les mappings configurés
@@ -75,9 +99,11 @@ router.get('/:templateId/fields', authenticateToken, (req, res) => {
       ORDER BY id ASC
     `).all(templateId);
 
-    // Si aucun mapping, retourner un objet vide avec le schema du template
+    // Parser le schema pour exposer les champs DocuSeal au frontend
     const schemaObj = template.schema ? JSON.parse(template.schema) : {};
-    const docusealFields = schemaObj.fields || [];
+    const docusealFields = Array.isArray(schemaObj)
+      ? schemaObj
+      : (schemaObj.fields || []);
 
     // Enrichir les mappings avec les infos des champs DocuSeal
     const enrichedMappings = mappings.map((mapping: any) => ({

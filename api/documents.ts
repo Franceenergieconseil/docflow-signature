@@ -150,7 +150,16 @@ router.post('/send', authenticateToken, async (req: any, res) => {
     res.status(201).json(newDoc);
   } catch (error: any) {
     console.error('Error sending document:', error);
-    res.status(500).json({ message: error.message || "Error sending document" });
+
+    // Détecter les erreurs 404 de DocuSeal : le template n'existe plus sur DocuSeal
+    const errorStr = error?.message || '';
+    if (errorStr.includes('404') || errorStr.toLowerCase().includes('not found')) {
+      return res.status(500).json({
+        message: `Le template sélectionné n'existe pas ou a été supprimé sur DocuSeal. Veuillez vérifier sa configuration dans l'onglet Templates (id_docuseal: ${error?.templateId || 'inconnu'}).`
+      });
+    }
+
+    res.status(500).json({ message: errorStr || "Erreur lors de l'envoi du document" });
   }
 });
 

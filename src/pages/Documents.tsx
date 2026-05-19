@@ -61,6 +61,7 @@ const Documents: React.FC<DocumentsProps> = ({ initialFilter }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sending, setSending] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [validityDays, setValidityDays] = useState(14);
   const [customExpiryDate, setCustomExpiryDate] = useState('');
   const [showRelaunchModal, setShowRelaunchModal] = useState(false);
@@ -322,6 +323,7 @@ const Documents: React.FC<DocumentsProps> = ({ initialFilter }) => {
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     setSending(true);
+    setSendError(null);
     try {
       // Calculer la date d'expiration
       let expiresAt: string | null = null;
@@ -347,21 +349,36 @@ const Documents: React.FC<DocumentsProps> = ({ initialFilter }) => {
           expires_at: expiresAt
         })
       });
-      if (response.ok) {
-        setSuccess(true);
-        setTimeout(() => {
-          setStep(1);
-          setSelectedClient(null);
-          setSelectedTemplate(null);
-          setTemplateFieldsResponse(null);
-          setFormData({});
-          setValidityDays(14);
-          setCustomExpiryDate('');
-          setSuccess(false);
-        }, 3000);
+
+      if (!response.ok) {
+        // Extraire le message d'erreur retourné par l'API
+        let errorMessage = `Erreur serveur (${response.status})`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch {
+          // La réponse n'est pas du JSON valide
+        }
+        console.error('Erreur envoi document:', errorMessage);
+        setSendError(errorMessage);
+        return;
       }
-    } catch (error) {
+
+      setSuccess(true);
+      setTimeout(() => {
+        setStep(1);
+        setSelectedClient(null);
+        setSelectedTemplate(null);
+        setTemplateFieldsResponse(null);
+        setFormData({});
+        setValidityDays(14);
+        setCustomExpiryDate('');
+        setSuccess(false);
+        setSendError(null);
+      }, 3000);
+    } catch (error: any) {
       console.error('Error sending document:', error);
+      setSendError(error?.message || 'Une erreur réseau est survenue. Vérifiez votre connexion.');
     } finally {
       setSending(false);
     }
@@ -1054,6 +1071,15 @@ const Documents: React.FC<DocumentsProps> = ({ initialFilter }) => {
                     )}
                   </button>
                 </div>
+                {sendError && (
+                  <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4 mt-2">
+                    <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={18} />
+                    <div>
+                      <p className="text-sm font-bold text-red-700">Erreur lors de l'envoi</p>
+                      <p className="text-sm text-red-600 mt-0.5">{sendError}</p>
+                    </div>
+                  </div>
+                )}
               </form>
             ) : (
               <form onSubmit={handleSend} className="space-y-6">
@@ -1117,6 +1143,15 @@ const Documents: React.FC<DocumentsProps> = ({ initialFilter }) => {
                     )}
                   </button>
                 </div>
+                {sendError && (
+                  <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4 mt-2">
+                    <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={18} />
+                    <div>
+                      <p className="text-sm font-bold text-red-700">Erreur lors de l'envoi</p>
+                      <p className="text-sm text-red-600 mt-0.5">{sendError}</p>
+                    </div>
+                  </div>
+                )}
               </form>
             )}
           </motion.div>
