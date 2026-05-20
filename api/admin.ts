@@ -16,8 +16,8 @@ const requireAdmin = (req: any, res: any, next: any) => {
 router.get('/stats/dashboard', authenticateToken, requireAdmin, (req: any, res) => {
   try {
     const now = new Date();
-    // Fenêtre glissante de 30 jours — évite l'écran vide en début de mois
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // Fenêtre glissante de 30 jours — chaîne ISO pour compatibilité SQLite
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     
     // Total dossiers sur 30 jours
     const totalDossiers: any = db.prepare(`
@@ -61,8 +61,8 @@ router.get('/stats/dashboard', authenticateToken, requireAdmin, (req: any, res) 
 router.get('/documents/list', authenticateToken, requireAdmin, (req: any, res) => {
   try {
     const now = new Date();
-    // Fenêtre glissante de 30 jours
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // Fenêtre glissante de 30 jours — chaîne ISO pour compatibilité SQLite
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     
     // Récupérer tous les documents des 30 derniers jours avec les détails
     const documents: any[] = db.prepare(`
@@ -121,8 +121,8 @@ router.get('/documents/list', authenticateToken, requireAdmin, (req: any, res) =
 // ========== GET COMMERCIAL PERFORMANCE ==========
 router.get('/commerciaux/performance', authenticateToken, requireAdmin, (req: any, res) => {
   try {
-    // Fenêtre glissante de 30 jours
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // Fenêtre glissante de 30 jours — chaîne ISO pour compatibilité SQLite
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     
     // Top commerciaux avec vrai taux de conversion calculé en SQL
     // NULLIF(COUNT(d.id), 0) évite la division par zéro pour les commerciaux sans documents
