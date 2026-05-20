@@ -60,6 +60,7 @@ router.get('/templates/sync', authenticateToken, async (req, res) => {
 
     let successCount = 0;
     let errorCount = 0;
+    const syncedDocusealIds: number[] = [];
 
     console.log('📝 Insertion des templates dans la DB...');
     for (const template of templates) {
@@ -76,6 +77,7 @@ router.get('/templates/sync', authenticateToken, async (req, res) => {
           template.created_at || new Date().toISOString()
         );
         
+        syncedDocusealIds.push(template.id);
         console.log(`  ✓ Template ${template.id}: "${template.name}" synchronisé (${schemaData?.length || 0} champs)`);
         successCount++;
       } catch (dbError: any) {
@@ -84,12 +86,46 @@ router.get('/templates/sync', authenticateToken, async (req, res) => {
       }
     }
 
-    console.log(`\n📊 Résumé synchronisation: ${successCount} réussis, ${errorCount} échoués`);
+    // ──────────────────────────────────────────────────────────────────────
+    // DÉTECTION DES ORPHELINS : templates présents en BDD mais absents de
+    // la réponse DocuSeal (supprimés ou archivés sur l'instance DocuSeal).
+    // → On les passe à available = 0 pour qu'ils ne soient plus proposables
+    //   aux commerciaux, sans les supprimer définitivement (audit conservé).
+    // ──────────────────────────────────────────────────────────────────────
+    let orphanCount = 0;
+    if (syncedDocusealIds.length > 0) {
+      // Construire la liste de placeholders pour la clause NOT IN
+      const placeholders = syncedDocusealIds.map(() => '?').join(', ');
+      const orphanResult = db.prepare(`
+        UPDATE document_templates
+        SET available = 0
+        WHERE id_docuseal NOT IN (${placeholders})
+      `).run(...syncedDocusealIds);
+
+      orphanCount = orphanResult.changes;
+      if (orphanCount > 0) {
+        console.log(`⚠️  ${orphanCount} template(s) orphelin(s) marqué(s) indisponible(s) (absent(s) de DocuSeal)`);
+
+        // Logger les noms des templates orphelins pour la traçabilité
+        const orphans: any[] = db.prepare(`
+          SELECT nom_template, id_docuseal FROM document_templates
+          WHERE id_docuseal NOT IN (${placeholders}) AND available = 0
+        `).all(...syncedDocusealIds);
+        orphans.forEach((o: any) => {
+          console.log(`  🚫 Orphelin : "${o.nom_template}" (id_docuseal: ${o.id_docuseal})`);
+        });
+      } else {
+        console.log('✅ Aucun orphelin détecté — tous les templates BDD existent sur DocuSeal');
+      }
+    }
+
+    console.log(`\n📊 Résumé synchronisation: ${successCount} synchronisé(s), ${errorCount} erreur(s), ${orphanCount} orphelin(s) désactivé(s)`);
 
     res.json({ 
       message: 'Templates synchronisés avec succès', 
       count: successCount,
-      errors: errorCount
+      errors: errorCount,
+      orphansDisabled: orphanCount
     });
   } catch (error: any) {
     console.error('❌ ERREUR SYNC:', error.message);

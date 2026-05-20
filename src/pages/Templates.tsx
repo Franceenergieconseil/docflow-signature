@@ -131,6 +131,33 @@ const Templates: React.FC = () => {
     }
   };
 
+  const handleDelete = async (templateId: number, templateName: string) => {
+    const confirmed = window.confirm(
+      `Êtes-vous sûr de vouloir supprimer le modèle "${templateName}" de DocFlow ?\n\nCette action supprimera également tous ses mappings de champs configurés. Cette opération est irréversible.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(`/api/templates/${templateId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(`❌ Erreur : ${data.message || 'Impossible de supprimer le modèle'}`);
+        return;
+      }
+
+      alert(`✅ ${data.message}`);
+      fetchTemplates();
+    } catch (error: any) {
+      console.error('Erreur suppression template:', error);
+      alert(`❌ Erreur réseau : ${error.message}`);
+    }
+  };
+
   if (user?.role !== 'admin') {
     return (
       <div className="h-full flex flex-col items-center justify-center p-10 text-center space-y-4">
@@ -288,7 +315,13 @@ const Templates: React.FC = () => {
                           {template.available ? '✓ Disponible' : 'Non disponible'}
                         </span>
                       )}
-                      <button className="p-1.5 text-[#64748B] hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover:opacity-100">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation(); // évite de déclencher d'autres handlers sur la carte
+                          handleDelete(template.id, template.nom_template);
+                        }}
+                        title="Supprimer ce modèle"
+                        className="p-1.5 text-[#64748B] hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover:opacity-100">
                         <Trash2 size={14} />
                       </button>
                     </div>

@@ -167,6 +167,51 @@ router.put('/:id/available', authenticateToken, isAdmin, (req: any, res) => {
 });
 
 /**
+ * @route   DELETE /api/templates/:id
+ * @desc    Supprime un template de DocFlow (Admin uniquement).
+ *          Supprime également tous les mappings de champs associés
+ *          pour éviter des entrées orphelines dans template_field_mappings.
+ */
+router.delete('/:id', authenticateToken, isAdmin, (req: any, res) => {
+  const { id } = req.params;
+
+  try {
+    const template: any = db.prepare('SELECT * FROM document_templates WHERE id = ?').get(id);
+
+    if (!template) {
+      return res.status(404).json({ success: false, message: "Modèle non trouvé" });
+    }
+
+    // Supprimer d'abord les mappings associés (évite les orphelins)
+    const deletedMappings = db.prepare(
+      'DELETE FROM template_field_mappings WHERE template_id = ?'
+    ).run(id);
+
+    // Supprimer le template lui-même
+    db.prepare('DELETE FROM document_templates WHERE id = ?').run(id);
+
+    // Log de l'activité
+    db.prepare('INSERT INTO activities (user_id, action, details) VALUES (?, ?, ?)')
+      .run(
+        req.user.id,
+        'deleted_template',
+        `Modèle supprimé : "${template.nom_template}" (id_docuseal: ${template.id_docuseal}, ${deletedMappings.changes} mapping(s) supprimé(s))`
+      );
+
+    console.log(`🗑️ Template "${template.nom_template}" (id=${id}) supprimé avec ${deletedMappings.changes} mapping(s)`);
+
+    res.json({
+      success: true,
+      message: `Modèle "${template.nom_template}" supprimé avec succès`,
+      deletedMappings: deletedMappings.changes
+    });
+  } catch (error) {
+    console.error('Error deleting template:', error);
+    res.status(500).json({ success: false, message: "Erreur lors de la suppression du modèle" });
+  }
+});
+
+/**
  * @route   POST /api/templates
  * @desc    Création manuelle d'un modèle (Admin uniquement)
  */
