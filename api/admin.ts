@@ -16,25 +16,26 @@ const requireAdmin = (req: any, res: any, next: any) => {
 router.get('/stats/dashboard', authenticateToken, requireAdmin, (req: any, res) => {
   try {
     const now = new Date();
-    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Fenêtre glissante de 30 jours — évite l'écran vide en début de mois
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     
-    // Total dossiers du mois
+    // Total dossiers sur 30 jours
     const totalDossiers: any = db.prepare(`
       SELECT COUNT(*) as count FROM documents 
       WHERE sent_at >= ?
-    `).get(firstDayOfMonth);
+    `).get(thirtyDaysAgo);
 
     // En attente de signature
     const enAttente: any = db.prepare(`
       SELECT COUNT(*) as count FROM documents 
       WHERE sent_at >= ? AND status IN ('sent', 'opened')
-    `).get(firstDayOfMonth);
+    `).get(thirtyDaysAgo);
 
     // Terminés (signés)
     const termines: any = db.prepare(`
       SELECT COUNT(*) as count FROM documents 
       WHERE sent_at >= ? AND status = 'signed'
-    `).get(firstDayOfMonth);
+    `).get(thirtyDaysAgo);
 
     const total = totalDossiers.count || 0;
     const pending = enAttente.count || 0;
@@ -60,9 +61,10 @@ router.get('/stats/dashboard', authenticateToken, requireAdmin, (req: any, res) 
 router.get('/documents/list', authenticateToken, requireAdmin, (req: any, res) => {
   try {
     const now = new Date();
-    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Fenêtre glissante de 30 jours
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     
-    // Récupérer tous les documents du mois avec les détails
+    // Récupérer tous les documents des 30 derniers jours avec les détails
     const documents: any[] = db.prepare(`
       SELECT 
         d.id,
@@ -80,7 +82,7 @@ router.get('/documents/list', authenticateToken, requireAdmin, (req: any, res) =
       JOIN document_templates t ON d.template_id = t.id
       WHERE d.sent_at >= ?
       ORDER BY d.sent_at DESC
-    `).all(firstDayOfMonth);
+    `).all(thirtyDaysAgo);
 
     // Calculer le délai pour chaque document
     const docsWithDelay = documents.map((doc: any) => {
@@ -119,24 +121,30 @@ router.get('/documents/list', authenticateToken, requireAdmin, (req: any, res) =
 // ========== GET COMMERCIAL PERFORMANCE ==========
 router.get('/commerciaux/performance', authenticateToken, requireAdmin, (req: any, res) => {
   try {
-    const now = new Date();
-    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Fenêtre glissante de 30 jours
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     
-    // Top commerciaux avec dossiers signés ce mois
+    // Top commerciaux avec vrai taux de conversion calculé en SQL
+    // NULLIF(COUNT(d.id), 0) évite la division par zéro pour les commerciaux sans documents
     const commerciaux: any[] = db.prepare(`
       SELECT 
         u.id,
         u.first_name as firstName,
         u.last_name as lastName,
         COUNT(d.id) as totalCount,
-        SUM(CASE WHEN d.status = 'signed' THEN 1 ELSE 0 END) as signedCount
+        SUM(CASE WHEN d.status = 'signed' THEN 1 ELSE 0 END) as signedCount,
+        ROUND(
+          SUM(CASE WHEN d.status = 'signed' THEN 1 ELSE 0 END) * 100.0
+          / NULLIF(COUNT(d.id), 0),
+          1
+        ) as conversionRate
       FROM users u
       LEFT JOIN documents d ON u.id = d.sender_id AND d.sent_at >= ?
       WHERE u.role = 'commercial'
       GROUP BY u.id
-      ORDER BY signedCount DESC
+      ORDER BY signedCount DESC, conversionRate DESC
       LIMIT 5
-    `).all(firstDayOfMonth);
+    `).all(thirtyDaysAgo);
 
     res.json({
       success: true,

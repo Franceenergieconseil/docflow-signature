@@ -31,6 +31,7 @@ interface CommercialStats {
   lastName: string;
   totalCount: number;
   signedCount: number;
+  conversionRate: number | null; // null si aucun doc envoyé (NULLIF)
 }
 
 const AdminDashboard: React.FC = () => {
@@ -290,7 +291,7 @@ const AdminDashboard: React.FC = () => {
             transition={{ delay: 0.4 }}
             className="bg-white rounded-lg border border-[#E2E8F0] p-6"
           >
-            <h3 className="text-lg font-bold text-[#0F172A] mb-4">🏆 Top Commerciaux</h3>
+            <h3 className="text-lg font-bold text-[#0F172A] mb-4">🏆 Top Commerciaux <span className="text-xs font-normal text-[#64748B] ml-1">(30 derniers jours)</span></h3>
             <div className="space-y-3">
               {loading ? (
                 <p className="text-[#64748B] text-sm">Chargement...</p>
@@ -298,8 +299,8 @@ const AdminDashboard: React.FC = () => {
                 <p className="text-[#64748B] text-sm">Aucune donnée</p>
               ) : (
                 commerciaux.map((comm, idx) => {
-                  const maxSigned = Math.max(...commerciaux.map(c => c.signedCount), 1);
-                  const percentage = (comm.signedCount / maxSigned) * 100;
+                  // Taux réel retourné par l'API (null si 0 document envoyé)
+                  const rate = comm.conversionRate ?? 0;
                   
                   return (
                     <motion.div
@@ -309,24 +310,29 @@ const AdminDashboard: React.FC = () => {
                       transition={{ delay: 0.5 + idx * 0.05 }}
                       className="flex items-center gap-3"
                     >
-                      <div className="w-6 h-6 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-bold">
+                      <div className="w-6 h-6 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-xs font-bold shrink-0">
                         {idx + 1}
                       </div>
-                      <div className="flex-1">
-                        <div className="flex justify-between mb-1">
-                          <span className="font-medium text-[#0F172A] text-sm">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-baseline mb-1 gap-2">
+                          <span className="font-medium text-[#0F172A] text-sm truncate">
                             {comm.firstName} {comm.lastName}
                           </span>
-                          <span className="text-xs text-[#64748B] font-semibold">
-                            {comm.signedCount} / {comm.totalCount}
+                          <span className="text-xs text-[#64748B] font-semibold whitespace-nowrap shrink-0">
+                            {rate}% ({comm.signedCount}/{comm.totalCount} signés)
                           </span>
                         </div>
                         <div className="w-full h-2 bg-[#E2E8F0] rounded-full overflow-hidden">
                           <motion.div
                             initial={{ width: 0 }}
-                            animate={{ width: `${percentage}%` }}
+                            animate={{ width: `${rate}%` }}
                             transition={{ delay: 0.6 + idx * 0.05, duration: 0.8 }}
-                            className="h-full bg-gradient-to-r from-[#2563EB] to-[#1D4ED8]"
+                            className={`h-full rounded-full ${
+                              rate >= 75 ? 'bg-gradient-to-r from-emerald-500 to-emerald-400' :
+                              rate >= 50 ? 'bg-gradient-to-r from-[#2563EB] to-[#1D4ED8]' :
+                              rate >= 25 ? 'bg-gradient-to-r from-amber-500 to-amber-400' :
+                              'bg-gradient-to-r from-red-400 to-red-300'
+                            }`}
                           />
                         </div>
                       </div>
@@ -338,50 +344,44 @@ const AdminDashboard: React.FC = () => {
           </motion.div>
         </div>
 
-        {/* Pie Chart Visuel */}
+        {/* Résumé Performances */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="bg-white rounded-lg border border-[#E2E8F0] p-6 flex flex-col items-center justify-center"
+          className="bg-white rounded-lg border border-[#E2E8F0] p-6 flex flex-col justify-between"
         >
-          <h3 className="text-lg font-bold text-[#0F172A] mb-4">Répartition</h3>
+          <h3 className="text-lg font-bold text-[#0F172A] mb-4">Résumé Équipe</h3>
           {loading || commerciaux.length === 0 ? (
             <p className="text-[#64748B] text-sm">Aucune donnée</p>
           ) : (
-            <div className="w-32 h-32 rounded-full relative flex items-center justify-center">
-              <svg viewBox="0 0 100 100" className="w-full h-full transform -rotate-90">
-                {commerciaux.reduce((acc, comm, idx) => {
-                  const totalSigned = commerciaux.reduce((sum, c) => sum + c.signedCount, 0);
-                  const percentage = totalSigned > 0 ? (comm.signedCount / totalSigned) * 100 : 0;
-                  const startAngle = acc;
-                  const endAngle = acc + (percentage * 3.6);
-                  
-                  const colors = ['#2563EB', '#1D4ED8', '#1e40af', '#1e3a8a', '#172554'];
-                  const color = colors[idx % colors.length];
-                  
-                  const startRad = (startAngle * Math.PI) / 180;
-                  const endRad = (endAngle * Math.PI) / 180;
-                  
-                  const x1 = 50 + 40 * Math.cos(startRad);
-                  const y1 = 50 + 40 * Math.sin(startRad);
-                  const x2 = 50 + 40 * Math.cos(endRad);
-                  const y2 = 50 + 40 * Math.sin(endRad);
-                  
-                  const largeArc = percentage > 50 ? 1 : 0;
-                  const pathData = [
-                    `M 50 50`,
-                    `L ${x1} ${y1}`,
-                    `A 40 40 0 ${largeArc} 1 ${x2} ${y2}`,
-                    'Z'
-                  ].join(' ');
-
-                  return acc + (percentage * 3.6);
-                }, 0)}
-              </svg>
-              <div className="absolute text-center">
-                <p className="text-lg font-bold text-[#0F172A]">{commerciaux.length}</p>
-                <p className="text-xs text-[#64748B]">commerciaux</p>
+            <div className="space-y-4">
+              <div className="text-center py-2">
+                <p className="text-4xl font-bold text-[#2563EB]">
+                  {commerciaux.filter(c => c.totalCount > 0).length}
+                  <span className="text-lg text-[#64748B] font-normal">/{commerciaux.length}</span>
+                </p>
+                <p className="text-xs text-[#64748B] mt-1 uppercase tracking-wider font-semibold">Commerciaux actifs</p>
+              </div>
+              <div className="space-y-2 pt-2 border-t border-[#E2E8F0]">
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#64748B]">Total envoyés</span>
+                  <span className="font-bold text-[#0F172A]">
+                    {commerciaux.reduce((sum, c) => sum + c.totalCount, 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#64748B]">Total signés</span>
+                  <span className="font-bold text-emerald-600">
+                    {commerciaux.reduce((sum, c) => sum + c.signedCount, 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[#64748B]">Meilleur taux</span>
+                  <span className="font-bold text-[#2563EB]">
+                    {Math.max(...commerciaux.map(c => c.conversionRate ?? 0))}%
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -491,19 +491,6 @@ const AdminDashboard: React.FC = () => {
                           <span className={`px-3 py-1 rounded-full text-xs font-semibold ${colors.badge} ${colors.text}`}>
                             {statusLabel}
                           </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div>
-                            <p className={`font-medium ${doc.isOverdue ? 'text-red-600' : 'text-[#0F172A]'}`}>
-                              {doc.delayFormatted}
-                            </p>
-                            {doc.isOverdue && (
-                              <p className="text-xs text-red-600 flex items-center gap-1 mt-1">
-                                <AlertTriangle size={12} />
-                                En retard
-                              </p>
-                            )}
-                          </div>
                         </td>
                         <td className="px-6 py-4">
                           <div>
