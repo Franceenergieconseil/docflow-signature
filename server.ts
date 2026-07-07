@@ -35,6 +35,7 @@ import docusealSyncRouter from "./api/docuseal_sync.ts";
 import webhooksRouter from "./api/webhooks.ts";
 import usersRouter from "./api/users.ts";
 import adminRouter from "./api/admin.ts";
+import externalRouter from "./api/external.ts";
 
 async function startServer() {
   const app = express();
@@ -71,6 +72,7 @@ async function startServer() {
   apiRouter.use("/documents", documentsRouter);
   apiRouter.use("/docuseal", docusealSyncRouter);
   apiRouter.use("/webhooks", webhooksRouter);
+  apiRouter.use("/external", externalRouter);
 
   apiRouter.get("/health", (req, res) => {
     res.json({ status: "ok" });

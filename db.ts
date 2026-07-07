@@ -240,6 +240,21 @@ try {
     // Commercial test existe déjà
   }
 
+  // Insérer l'utilisateur système pour l'API externe (sender_id des documents créés via API)
+  try {
+    const bcrypt = await import('bcryptjs');
+    // Mot de passe long aléatoire — cet utilisateur ne se connecte jamais via l'UI
+    const randomPassword = require('crypto').randomBytes(32).toString('hex');
+    const hashedPassword = bcrypt.hashSync(randomPassword, 10);
+    db.prepare(`
+      INSERT INTO users (email, password, first_name, last_name, role) 
+      VALUES ('api@system.local', ?, 'API', 'Externe', 'admin')
+    `).run(hashedPassword);
+    console.log('✓ System API user inserted (api@system.local)');
+  } catch (e) {
+    // Utilisateur système existe déjà
+  }
+
   console.log('\n✅ Schema initialization complete');
 } catch (error) {
   console.error('❌ Migration failed:', error);
