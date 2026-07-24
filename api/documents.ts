@@ -135,11 +135,20 @@ router.post('/send', authenticateToken, async (req: any, res) => {
 
     console.log('✅ Submission ID DocuSeal:', submission.id);
 
+    // Extraire le submitter_id (ID du signataire) depuis la réponse DocuSeal
+    // DocuSeal retourne : { id: <submission_id>, submitters: [{ id: <submitter_id>, email, ... }] }
+    const submitterId: number | null = submission.submitters?.[0]?.id ?? null;
+    if (submitterId) {
+      console.log('✅ Submitter ID DocuSeal:', submitterId);
+    } else {
+      console.warn('⚠️ Aucun submitter_id retourné par DocuSeal — la relance par email sera impossible.');
+    }
+
     // 6. SAUVEGARDE DU DOCUMENT ENVOYÉ
     const result = db.prepare(`
-      INSERT INTO documents (client_id, template_id, sender_id, docuseal_submission_id, status, dynamic_data, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(client_id, template_id, req.user.id, submission.id, 'sent', JSON.stringify(dynamic_data), expires_at || null);
+      INSERT INTO documents (client_id, template_id, sender_id, docuseal_submission_id, docuseal_submitter_id, status, dynamic_data, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(client_id, template_id, req.user.id, submission.id, submitterId, 'sent', JSON.stringify(dynamic_data), expires_at || null);
 
     const newDoc = db.prepare('SELECT * FROM documents WHERE id = ?').get(result.lastInsertRowid);
 
@@ -220,8 +229,16 @@ router.post('/:id/relaunch', authenticateToken, async (req: any, res) => {
       return res.status(400).json({ success: false, message: "Le document a été décliné, il ne peut pas être relancé" });
     }
 
-    // Envoyer la requête de relance à DocuSeal
-    await docusealApi.resendSubmission(document.docuseal_submission_id);
+    // Vérifier que le docuseal_submitter_id est disponible
+    if (!document.docuseal_submitter_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Impossible de relancer : l'ID du signataire DocuSeal (submitter_id) est manquant pour ce document. Ce document a peut-être été créé avant la mise à jour du système."
+      });
+    }
+
+    // Envoyer la requête de relance à DocuSeal avec l'ID du submitter
+    await docusealApi.resendSubmission(document.docuseal_submitter_id);
 
     // Logger l'activité
     db.prepare('INSERT INTO activities (user_id, action, details) VALUES (?, ?, ?)')

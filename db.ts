@@ -196,6 +196,14 @@ try {
     // Colonne existe déjà
   }
 
+  // Ajouter docuseal_submitter_id pour stocker l'ID du signataire DocuSeal (nécessaire pour la relance)
+  try {
+    db.exec("ALTER TABLE documents ADD COLUMN docuseal_submitter_id INTEGER");
+    console.log('✓ Column docuseal_submitter_id added to documents');
+  } catch (e) {
+    // Colonne existe déjà
+  }
+
   // NOTE: La colonne fusion existe déjà en tant que INTEGER.
   // SQLite ne supporte pas ALTER COLUMN TYPE, mais TEXT peut stocker du JSON.
   // La colonne fusion actuelle (INTEGER) sera progressivement remplacée par des valeurs JSON.

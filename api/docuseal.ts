@@ -67,17 +67,17 @@ export const docusealApi = {
       baseUrl.replace(/\/api\/?$/, '') + '/api/v1/templates'
     ];
 
+    // Vérification stricte de la clé API
     if (!API_KEY) {
-      console.warn('⚠️  DOCUSEAL_API_KEY manquante - retour de données de test');
-      return {
-        data: [
-          { id: 101, name: 'Contrat de Vente', created_at: new Date().toISOString() },
-          { id: 102, name: 'Accord de Confidentialité', created_at: new Date().toISOString() }
-        ]
-      };
+      console.error('🚨 ERREUR CRITIQUE: DOCUSEAL_API_KEY est vide ou non définie !');
+      console.error('   Variables disponibles:', Object.keys(process.env).filter(k => k.includes('DOCUSEAL')));
+      throw new Error('DOCUSEAL_API_KEY is required but not defined in environment variables');
     }
 
-    console.log('🌐 Appel API DocuSeal - Clé API:', API_KEY.substring(0, 10) + '...');
+    console.log('🌐 Appel API DocuSeal');
+    console.log('   Clé API (10 premiers caractères):', API_KEY.substring(0, 10) + '...');
+    console.log('   Longueur de la clé:', API_KEY.length, 'caractères');
+    console.log('   URL de base:', baseUrl);
 
     for (const apiUrl of apiUrls) {
       try {
@@ -135,13 +135,17 @@ export const docusealApi = {
     return data.fields || [];
   },
 
-  async resendSubmission(submissionId: number) {
+  async resendSubmission(submitterId: number) {
     if (!API_KEY) {
       console.warn('DOCUSEAL_API_KEY is not set. Using mock response.');
-      return { id: submissionId, status: 'sent', message: 'Mock resend successful' };
+      return { id: submitterId, status: 'sent', message: 'Mock resend successful' };
     }
 
-    const response = await fetch(`${DOCUSEAL_API_URL}/submissions/${submissionId}/resend`, {
+    // DocuSeal: POST /api/submitters/:id/resend — renvoie l'email au signataire
+    const url = `${DOCUSEAL_API_URL}/submitters/${submitterId}/resend`;
+    console.log(`📧 Relance DocuSeal: POST ${url}`);
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'X-Auth-Token': API_KEY,
@@ -150,10 +154,15 @@ export const docusealApi = {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to resend document to Docuseal');
+      const errorBody = await response.text();
+      console.error(`❌ DocuSeal resend error: HTTP ${response.status} ${response.statusText}`);
+      console.error(`   URL: ${url}`);
+      console.error(`   Body: ${errorBody}`);
+      throw new Error(`Failed to resend document to Docuseal (HTTP ${response.status}): ${errorBody}`);
     }
 
-    return response.json();
+    const result = await response.json().catch(() => ({ status: 'resent' }));
+    console.log('✅ Relance DocuSeal OK:', JSON.stringify(result));
+    return result;
   }
 };
