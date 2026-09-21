@@ -79,6 +79,7 @@ db.exec(`
     template_id INTEGER NOT NULL,
     sender_id INTEGER NOT NULL,
     docuseal_submission_id INTEGER,
+    docuseal_signature_url TEXT,
     status TEXT CHECK(status IN ('sent', 'opened', 'signed', 'declined', 'expired')) DEFAULT 'sent',
     dynamic_data TEXT,
     sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -200,6 +201,14 @@ try {
   try {
     db.exec("ALTER TABLE documents ADD COLUMN docuseal_submitter_id INTEGER");
     console.log('✓ Column docuseal_submitter_id added to documents');
+  } catch (e) {
+    // Colonne existe déjà
+  }
+
+  // Ajouter docuseal_signature_url pour stocker le lien de signature DocuSeal
+  try {
+    db.exec("ALTER TABLE documents ADD COLUMN docuseal_signature_url TEXT");
+    console.log('✓ Column docuseal_signature_url added to documents');
   } catch (e) {
     // Colonne existe déjà
   }

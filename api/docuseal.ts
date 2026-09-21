@@ -20,6 +20,17 @@ export interface DocusealSubmissionParams {
   }[];
 }
 
+export const getSignatureUrl = (submission: any): string | null => {
+  const submitter = submission?.submitters?.[0];
+  if (!submitter) return null;
+  if (submitter.embed_src) return submitter.embed_src;
+  if (submitter.slug) {
+    const base = DOCUSEAL_API_URL.replace(/\/api\/?$/, '');
+    return `${base}/s/${submitter.slug}`;
+  }
+  return null;
+};
+
 export const docusealApi = {
   async sendDocument(params: DocusealSubmissionParams) {
     if (!API_KEY) {

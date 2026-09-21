@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import db from '../db.ts';
 import { authenticateToken, isAdmin } from './auth.ts';
-import { docusealApi } from './docuseal.ts';
+import { docusealApi, getSignatureUrl } from './docuseal.ts';
 
 const router = Router();
 
@@ -153,6 +153,8 @@ router.post('/send', authenticateToken, async (req: any, res) => {
       }
     }
 
+    const signatureUrl = getSignatureUrl(submission);
+
     if (submitterId) {
       console.log('✅ Submitter ID DocuSeal:', submitterId);
     } else {
@@ -161,9 +163,9 @@ router.post('/send', authenticateToken, async (req: any, res) => {
 
     // 6. SAUVEGARDE DU DOCUMENT ENVOYÉ
     const result = db.prepare(`
-      INSERT INTO documents (client_id, template_id, sender_id, docuseal_submission_id, docuseal_submitter_id, status, dynamic_data, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(client_id, template_id, req.user.id, submission.id, submitterId, 'sent', JSON.stringify(dynamic_data), expires_at || null);
+      INSERT INTO documents (client_id, template_id, sender_id, docuseal_submission_id, docuseal_submitter_id, docuseal_signature_url, status, dynamic_data, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(client_id, template_id, req.user.id, submission.id, submitterId, signatureUrl, 'sent', JSON.stringify(dynamic_data), expires_at || null);
 
     const newDoc = db.prepare('SELECT * FROM documents WHERE id = ?').get(result.lastInsertRowid);
 
@@ -290,6 +292,34 @@ router.post('/:id/relaunch', authenticateToken, async (req: any, res) => {
   } catch (error: any) {
     console.error('Error relaunching document:', error);
     res.status(500).json({ success: false, message: error.message || "Erreur lors de la relance du document" });
+  }
+});
+
+// GET /api/documents/:id/signature-url
+router.get('/:id/signature-url', authenticateToken, async (req: any, res) => {
+  const { id } = req.params;
+  try {
+    const document: any = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
+    if (!document) {
+      return res.status(404).json({ success: false, message: 'Document non trouvé' });
+    }
+
+    let url = document.docuseal_signature_url;
+    if (!url && document.docuseal_submission_id) {
+      const submission = await docusealApi.getSubmission(document.docuseal_submission_id);
+      url = getSignatureUrl(submission);
+      if (url) {
+        db.prepare('UPDATE documents SET docuseal_signature_url = ? WHERE id = ?').run(url, id);
+      }
+    }
+
+    if (!url) {
+      return res.status(404).json({ success: false, message: "Lien de signature introuvable" });
+    }
+
+    res.json({ success: true, url });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message || "Erreur lors de la récupération du lien" });
   }
 });
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../AuthContext';
-import { Search, FileText, User, ChevronRight, Check, ArrowLeft, Send, Building2, Mail, Loader2, AlertCircle, Plus, Eye, Download, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Trash2, X, Filter } from 'lucide-react';
+import { Search, FileText, User, ChevronRight, Check, ArrowLeft, Send, Building2, Mail, Loader2, AlertCircle, Plus, Eye, Download, Clock, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Trash2, X, Filter, Link } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface FieldMapping {
@@ -28,6 +28,7 @@ interface Document {
   template_id: number;
   sender_id: number;
   docuseal_submission_id: number;
+  docuseal_signature_url?: string;
   status: 'sent' | 'opened' | 'signed' | 'declined' | 'expired';
   dynamic_data: string;
   sent_at: string;
@@ -70,6 +71,7 @@ const Documents: React.FC<DocumentsProps> = ({ initialFilter }) => {
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
   // Filtres avec persistance via localStorage
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'signed' | 'archived'>(() => {
@@ -189,6 +191,26 @@ const Documents: React.FC<DocumentsProps> = ({ initialFilter }) => {
       alert('Erreur lors de la relance du document');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleCopySignatureLink = async (doc: Document) => {
+    try {
+      let url = doc.docuseal_signature_url;
+      if (!url) {
+        const response = await fetch(`/api/documents/${doc.id}/signature-url`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.url) throw new Error(data.message || 'URL non disponible');
+        url = data.url;
+      }
+      await navigator.clipboard.writeText(url);
+      setToast({ message: 'Lien de signature copié dans le presse-papier', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    } catch (error: any) {
+      setToast({ message: error?.message || 'Erreur lors de la copie', type: 'error' });
+      setTimeout(() => setToast(null), 3000);
     }
   };
 
@@ -759,6 +781,12 @@ const Documents: React.FC<DocumentsProps> = ({ initialFilter }) => {
                                     onClick={() => { setSelectedDoc(doc); setShowRelaunchModal(true); }}
                                     className="p-2 hover:bg-amber-50 text-amber-600 rounded-md transition-all">
                                     <RefreshCw size={16} />
+                                  </button>
+                                  <button
+                                    title="Copier le lien de signature"
+                                    onClick={() => handleCopySignatureLink(doc)}
+                                    className="p-2 hover:bg-indigo-50 text-indigo-600 rounded-md transition-all">
+                                    <Link size={16} />
                                   </button>
                                   <button 
                                     title="Supprimer"
@@ -1481,11 +1509,18 @@ const Documents: React.FC<DocumentsProps> = ({ initialFilter }) => {
                 {/* DocuSeal Link */}
                 <div className="flex gap-3">
                   <button
-onClick={() => window.open(`https://docuseal.co/submissions/${selectedDoc.docuseal_submission_id}`, '_blank')}
+                    onClick={() => window.open(`https://docuseal.co/submissions/${selectedDoc.docuseal_submission_id}`, '_blank')}
                     className="btn-secondary flex-1 flex items-center justify-center gap-2"
                   >
                     <Eye size={18} />
                     Voir sur DocuSeal
+                  </button>
+                  <button
+                    onClick={() => handleCopySignatureLink(selectedDoc)}
+                    className="btn-primary flex-1 flex items-center justify-center gap-2"
+                  >
+                    <Link size={18} />
+                    Copier le lien
                   </button>
                   <button
                     onClick={() => setShowDetailsModal(false)}
@@ -1499,6 +1534,15 @@ onClick={() => window.open(`https://docuseal.co/submissions/${selectedDoc.docuse
           </motion.div>
         )}
       </AnimatePresence>
+      {toast && (
+        <div className="fixed top-4 right-4 z-50">
+          <div className={`px-4 py-3 rounded-lg shadow-lg text-white text-sm font-medium ${
+            toast.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'
+          }`}>
+            {toast.message}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
