@@ -137,7 +137,22 @@ router.post('/send', authenticateToken, async (req: any, res) => {
 
     // Extraire le submitter_id (ID du signataire) depuis la réponse DocuSeal
     // DocuSeal retourne : { id: <submission_id>, submitters: [{ id: <submitter_id>, email, ... }] }
-    const submitterId: number | null = submission.submitters?.[0]?.id ?? null;
+    let submitterId: number | null = submission.submitters?.[0]?.id ?? null;
+    // Fallback: si l'ID n'est pas présent, tenter de le récupérer via getSubmission
+    if (!submitterId) {
+      try {
+        const fresh = await docusealApi.getSubmission(submission.id);
+        submitterId = fresh.submitters?.[0]?.id ?? null;
+        if (submitterId) {
+          console.log(`✅ Submitter ID récupéré via getSubmission : ${submitterId}`);
+        } else {
+          console.warn('⚠️ Toujours aucun submitter_id après nouvelle tentative');
+        }
+      } catch (e) {
+        console.error('❌ Échec de récupération du submission pour obtenir submitterId', e);
+      }
+    }
+
     if (submitterId) {
       console.log('✅ Submitter ID DocuSeal:', submitterId);
     } else {
@@ -229,8 +244,32 @@ router.post('/:id/relaunch', authenticateToken, async (req: any, res) => {
       return res.status(400).json({ success: false, message: "Le document a été décliné, il ne peut pas être relancé" });
     }
 
-    // Vérifier que le docuseal_submitter_id est disponible
-    if (!document.docuseal_submitter_id) {
+    // Vérifier que le docuseal_submitter_id est disponible ou le récupérer depuis DocuSeal
+    let submitterId = document.docuseal_submitter_id;
+
+    if (!submitterId) {
+      // Tentative de récupération dynamique depuis DocuSeal
+      try {
+        const submission = await docusealApi.getSubmission(document.docuseal_submission_id!);
+        submitterId = submission.submitters?.[0]?.id ?? null;
+        if (submitterId) {
+          // Mettre à jour la ligne en base pour les prochaines relances
+          db.prepare(`
+            UPDATE documents SET docuseal_submitter_id = ? WHERE id = ?
+          `).run(submitterId, id);
+          console.log(`🔧 Submitter ID récupéré et sauvegardé : ${submitterId}`);
+        } else {
+          throw new Error('Aucun submitter_id trouvé dans la réponse DocuSeal');
+        }
+      } catch (err: any) {
+        return res.status(400).json({
+          success: false,
+          message: `Impossible de relancer : impossible d’obtenir l’ID du signataire DocuSeal. Veuillez vérifier la connexion à l’API ou renvoyer le document.`
+        });
+      }
+    }
+
+    if (!submitterId) {
       return res.status(400).json({
         success: false,
         message: "Impossible de relancer : l'ID du signataire DocuSeal (submitter_id) est manquant pour ce document. Ce document a peut-être été créé avant la mise à jour du système."
@@ -238,7 +277,7 @@ router.post('/:id/relaunch', authenticateToken, async (req: any, res) => {
     }
 
     // Envoyer la requête de relance à DocuSeal avec l'ID du submitter
-    await docusealApi.resendSubmission(document.docuseal_submitter_id);
+    await docusealApi.resendSubmission(submitterId);
 
     // Logger l'activité
     db.prepare('INSERT INTO activities (user_id, action, details) VALUES (?, ?, ?)')
