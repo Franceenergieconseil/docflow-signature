@@ -135,34 +135,35 @@ export const docusealApi = {
     return data.fields || [];
   },
 
-  async resendSubmission(submitterId: number) {
-    if (!API_KEY) {
-      console.warn('DOCUSEAL_API_KEY is not set. Using mock response.');
-      return { id: submitterId, status: 'sent', message: 'Mock resend successful' };
-    }
+async resendSubmission(submitterId: number) {
+     if (!API_KEY) {
+       console.warn('DOCUSEAL_API_KEY is not set. Using mock response.');
+       return { id: submitterId, status: 'sent', message: 'Mock resend successful' };
+     }
 
-    // DocuSeal: POST /api/submitters/:id/resend — renvoie l'email au signataire
-    const url = `${DOCUSEAL_API_URL}/submitters/${submitterId}/resend`;
-    console.log(`📧 Relance DocuSeal: POST ${url}`);
+     // DocuSeal: PUT /api/submitters/:id with { send_email: true } — renvoie l'email au signataire
+     const url = `${DOCUSEAL_API_URL}/submitters/${submitterId}`;
+     console.log(`📧 Relance DocuSeal: PUT ${url} {{ send_email: true }}`);
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'X-Auth-Token': API_KEY,
-        'Content-Type': 'application/json',
-      },
-    });
+     const response = await fetch(url, {
+       method: 'PUT',
+       headers: {
+         'X-Auth-Token': API_KEY,
+         'Content-Type': 'application/json',
+       },
+       body: JSON.stringify({ send_email: true }),
+     });
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`❌ DocuSeal resend error: HTTP ${response.status} ${response.statusText}`);
-      console.error(`   URL: ${url}`);
-      console.error(`   Body: ${errorBody}`);
-      throw new Error(`Failed to resend document to Docuseal (HTTP ${response.status}): ${errorBody}`);
-    }
+     if (!response.ok) {
+       const errorBody = await response.text();
+       console.error(`❌ DocuSeal resend error: HTTP ${response.status} ${response.statusText}`);
+       console.error(`   URL: ${url}`);
+       console.error(`   Body: ${errorBody}`);
+       throw new Error(`Failed to resend document to Docuseal (HTTP ${response.status}): ${errorBody}`);
+     }
 
-    const result = await response.json().catch(() => ({ status: 'resent' }));
-    console.log('✅ Relance DocuSeal OK:', JSON.stringify(result));
-    return result;
-  }
+     const result = await response.json().catch(() => ({ status: 'resent' }));
+     console.log('✅ Relance DocuSeal OK:', JSON.stringify(result));
+     return result;
+   }
 };
